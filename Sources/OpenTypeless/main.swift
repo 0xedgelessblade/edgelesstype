@@ -1,0 +1,940 @@
+#if !os(macOS) || !arch(arm64)
+#error("edgelesstype supports only Apple silicon M-series Macs.")
+#endif
+import AppKit
+import Foundation
+import OpenTypelessCore
+
+@_silgen_name("CGRequestListenEventAccess")
+func CGRequestListenEventAccess() -> Bool
+
+@_silgen_name("CGPreflightListenEventAccess")
+func CGPreflightListenEventAccess() -> Bool
+
+struct AppConfig: Codable {
+    var whisperCLI: String
+    var modelPath: String
+    var ffmpegPath: String
+    var audioDevice: String
+    var language: String
+    var threads: Int
+    var tapMaxSeconds: Double
+    var polish: PolishConfig
+    var translate: TranslateConfig
+    var terms: [String]
+    var residentSpeech: ResidentSpeechConfig?
+
+    enum CodingKeys: String, CodingKey {
+        case whisperCLI, modelPath, ffmpegPath, audioDevice, language, threads, tapMaxSeconds, polish, translate, terms, residentSpeech
+    }
+
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        whisperCLI = try box.decode(String.self, forKey: .whisperCLI)
+        modelPath = try box.decode(String.self, forKey: .modelPath)
+        ffmpegPath = try box.decode(String.self, forKey: .ffmpegPath)
+        audioDevice = try box.decode(String.self, forKey: .audioDevice)
+        language = try box.decode(String.self, forKey: .language)
+        threads = try box.decode(Int.self, forKey: .threads)
+        tapMaxSeconds = try box.decode(Double.self, forKey: .tapMaxSeconds)
+        polish = try box.decode(PolishConfig.self, forKey: .polish)
+        translate = try box.decode(TranslateConfig.self, forKey: .translate)
+        residentSpeech = try box.decodeIfPresent(ResidentSpeechConfig.self, forKey: .residentSpeech)
+        terms = try box.decodeIfPresent([String].self, forKey: .terms) ?? ["Hermes"]
+    }
+}
+
+struct PolishConfig: Codable {
+    var enabled: Bool
+    var timeoutSeconds: Double
+}
+
+struct TranslateConfig: Codable {
+    var reasoningEffort: String
+    var timeoutSeconds: Double
+}
+
+enum AppPaths {
+    static var soundSettingsStore: SoundSettingsStore {
+        SoundSettingsStore(url: projectRoot().appendingPathComponent("Config/sounds.json"))
+    }
+
+    static var vocabularyStore: VocabularyStore {
+        VocabularyStore(url: projectRoot().appendingPathComponent("Config/vocabulary.json"))
+    }
+
+    static func projectRoot() -> URL {
+        let start = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        var url = start.deletingLastPathComponent()
+        for _ in 0..<8 {
+            if FileManager.default.fileExists(atPath: url.appendingPathComponent("Config/app.json").path) {
+                return url
+            }
+            url.deleteLastPathComponent()
+        }
+        // Bundle-relative fallback: never embed a developer's source path.
+        return start.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    static func resolve(_ path: String) -> String {
+        guard !path.hasPrefix("/") else { return path }
+        return projectRoot().appendingPathComponent(path).standardizedFileURL.path
+    }
+
+    static var localSettingsDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/codex-secrets", isDirectory: true)
+    }
+
+    static func loadConfig() throws -> AppConfig {
+        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let bundled = exe
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/app.json")
+        let local = projectRoot().appendingPathComponent("Config/app.json")
+        let url = FileManager.default.fileExists(atPath: local.path) ? local : bundled
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(AppConfig.self, from: data)
+    }
+}
+
+enum CLI {
+    static func run(_ args: [String]) -> Int32 {
+        let command = args.dropFirst().first ?? "help"
+        do {
+            switch command {
+            case "verify-key":
+                let store = SecretStore(locations: SecretLocations.production(projectRoot: AppPaths.projectRoot()))
+                let ok = try store.verify()
+                FileHandle.standardOutput.write(Data((ok ? "金鑰已保存\n" : "尚未保存金鑰\n").utf8))
+                return ok ? 0 : 1
+            case "set-key":
+                try setKey()
+                FileHandle.standardOutput.write(Data("已保存。金鑰沒有寫進這個資料夾的明文，也沒有印出來。\n".utf8))
+                return 0
+            case "delete-key":
+                let store = SecretStore(locations: SecretLocations.production(projectRoot: AppPaths.projectRoot()))
+                try store.delete()
+                FileHandle.standardOutput.write(Data("已刪除這支程式保存的金鑰密文。\n".utf8))
+                return 0
+            case "transcribe":
+                guard args.count >= 3 else {
+                    FileHandle.standardError.write(Data("需要一個音檔路徑。\n".utf8))
+                    return 2
+                }
+                let config = try AppPaths.loadConfig()
+                let text = try Transcriber(config: config).transcribe(url: URL(fileURLWithPath: args[2]))
+                FileHandle.standardOutput.write(Data((text + "\n").utf8))
+                return 0
+            default:
+                FileHandle.standardOutput.write(Data("用法：verify-key、set-key、delete-key、transcribe <音檔>\n".utf8))
+                return 2
+            }
+        } catch {
+            FileHandle.standardError.write(Data("沒有完成。沒有印出金鑰。\n".utf8))
+            return 1
+        }
+    }
+
+    static func setKey() throws {
+        guard isatty(STDIN_FILENO) == 1 else { throw SecretError.notATerminal }
+        FileHandle.standardError.write(Data("貼上金鑰後按 Enter。畫面不會顯示。不要把金鑰貼到聊天裡。\n".utf8))
+        let secret = try HiddenInput.read()
+        let store = SecretStore(locations: SecretLocations.production(projectRoot: AppPaths.projectRoot()))
+        try store.save(secret: Data(secret.utf8))
+    }
+}
+
+enum HiddenInput {
+    static func read() throws -> String {
+        var old = termios()
+        tcgetattr(STDIN_FILENO, &old)
+        var hidden = old
+        hidden.c_lflag &= ~tcflag_t(ECHO)
+        tcsetattr(STDIN_FILENO, TCSANOW, &hidden)
+        defer { tcsetattr(STDIN_FILENO, TCSANOW, &old) }
+        guard let line = readLine(strippingNewline: true) else { throw SecretError.emptySecret }
+        FileHandle.standardError.write(Data("\n".utf8))
+        return line
+    }
+}
+
+struct Transcriber {
+    let config: AppConfig
+    var vocabulary: VocabularySettings? = nil
+
+    func transcribe(url: URL) throws -> String {
+        if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
+        if config.residentSpeech != nil {
+            return try ResidentSpeechEngine.shared.transcribe(url: url, config: config,
+                prompt: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms))
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: AppPaths.resolve(config.whisperCLI))
+        process.arguments = [
+            "-m", AppPaths.resolve(config.modelPath),
+            "-f", url.path,
+            "-l", config.language,
+            "-t", String(config.threads),
+            "-nt", "-np",
+            "--prompt", Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms)
+        ]
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw SpeechEngineError.invalidResponse }
+        return String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+}
+
+final class Recorder {
+    let config: AppConfig
+    private var process: Process?
+    private var fileURL: URL?
+
+    init(config: AppConfig) {
+        self.config = config
+    }
+
+    func start() throws -> URL {
+        let url = URL(fileURLWithPath: "/private/tmp/open-typeless-\(UUID().uuidString).wav")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: AppPaths.resolve(config.ffmpegPath))
+        process.arguments = [
+            "-hide_banner", "-loglevel", "error",
+            "-f", "avfoundation",
+            "-i", Self.microphone(fallback: config.audioDevice, ffmpeg: AppPaths.resolve(config.ffmpegPath)),
+            "-ac", "1",
+            "-ar", "16000",
+            "-acodec", "pcm_s16le",
+            "-y", url.path
+        ]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+        self.process = process
+        self.fileURL = url
+        return url
+    }
+
+    private static func microphone(fallback: String, ffmpeg: String) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ffmpeg)
+        process.arguments = ["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
+        let err = Pipe()
+        process.standardOutput = Pipe()
+        process.standardError = err
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return fallback
+        }
+        let listing = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return AudioInput.pick(from: listing, fallback: fallback)
+    }
+
+    func stop() -> URL? {
+        guard let process, let fileURL else { return nil }
+        process.interrupt()
+        let deadline = Date().addingTimeInterval(3)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning {
+            process.terminate()
+        }
+        self.process = nil
+        self.fileURL = nil
+        return fileURL
+    }
+}
+
+final class HotkeyMonitor {
+    var onTap: ((TapKind) -> Void)?
+    var onPasteKey: ((Bool, Bool) -> Bool)?
+    var tapMax: TimeInterval = Hotkey.defaultTapMax
+    private var tap: CFMachPort?
+    private var downAt: Date?
+    private var shiftDuring = false
+    private var sawKeyDown = false
+    private let fnCode: Int64 = 63
+    var mode = "none"
+
+    func install(listenOnly: Bool = false) -> Bool {
+        let mask = (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: listenOnly ? .listenOnly : .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: { _, type, event, userInfo in
+                guard let userInfo else { return Unmanaged.passUnretained(event) }
+                let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+                let consume = monitor.handle(type: type, event: event)
+                return consume ? nil : Unmanaged.passUnretained(event)
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            return false
+        }
+        self.tap = tap
+        mode = listenOnly ? "listen" : "active"
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        return true
+    }
+
+    func handle(type: CGEventType, event: CGEvent) -> Bool {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            return false
+        }
+        let code = event.getIntegerValueField(.keyboardEventKeycode)
+        if type == .keyDown, code == 9 {
+            let command = event.flags.contains(.maskCommand)
+            let control = event.flags.contains(.maskControl)
+            if command || control {
+                let fromUs = event.getIntegerValueField(.eventSourceUserData) == 7941
+                return self.onPasteKey?(control && !command, fromUs) ?? false
+            }
+            return false
+        }
+        guard code == fnCode else { return false }
+        let shift = event.flags.contains(.maskShift)
+        switch type {
+        case .keyDown:
+            if downAt == nil {
+                downAt = Date()
+                shiftDuring = shift
+                sawKeyDown = true
+            } else if shift {
+                shiftDuring = true
+            }
+        case .keyUp:
+            finish(shiftNow: shift)
+        case .flagsChanged:
+            let fnOn = event.flags.contains(.maskSecondaryFn)
+            if fnOn && downAt == nil {
+                downAt = Date()
+                shiftDuring = shift
+                sawKeyDown = false
+            } else if fnOn && shift {
+                shiftDuring = true
+            } else if !fnOn && downAt != nil {
+                finish(shiftNow: shift)
+            }
+        default:
+            break
+        }
+        return true
+    }
+
+    private func finish(shiftNow: Bool) {
+        guard let downAt else { return }
+        if shiftNow { shiftDuring = true }
+        let gesture = FnGesture(duration: Date().timeIntervalSince(downAt), shiftDuring: shiftDuring)
+        self.downAt = nil
+        self.shiftDuring = false
+        self.sawKeyDown = false
+        guard let kind = Hotkey.classify(gesture, maxTap: tapMax) else { return }
+        DispatchQueue.main.async { [onTap] in onTap?(kind) }
+    }
+}
+
+final class AppController: NSObject, NSApplicationDelegate {
+    private let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let panel = RecordChrome()
+    private let paster = Paster()
+    private lazy var soundPlayer = SoundPlayer(store: AppPaths.soundSettingsStore)
+    private var recordingSoundPreset: SoundPreset?
+    private var soundEditor: SoundSettingsWindow?
+    private var monitor: HotkeyMonitor?
+    private var recorder: Recorder?
+    private var config: AppConfig?
+    private var session = Session.idle
+    private var busy = false
+    private var explained = false
+    private var askedListen = false
+    private var toldMissing = false
+    private var retry: Timer?
+    private var recordingURL: URL?
+    private var targetPID: pid_t?
+    private var startedAt: Date?
+    private var recordingVocabulary = VocabularySettings()
+    private var apiEditor: APISettingsWindow?
+    private var vocabularyEditor: VocabularyWindow?
+    private var pendingTiming: DictationTiming?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        status.button?.title = "edgelesstype"
+        installApplicationMenu()
+        requestAccessibility()
+        panel.onCancel = { [weak self] in
+            guard let self else { return }
+            if self.paster.isOffering {
+                self.paster.cancelOffer()
+                self.panel.hide()
+                return
+            }
+            self.cancel()
+        }
+        panel.onConfirm = { [weak self] in self?.finish() }
+        paster.onDismiss = { [weak self] in self?.panel.hide(); self?.finishTiming() }
+        rebuildMenu()
+        explainIfNeeded {
+            self.installKeys()
+        }
+    }
+
+    private func requestAccessibility() {
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    private func installApplicationMenu() {
+        let bar = NSMenu()
+        let applicationItem = NSMenuItem()
+        let applicationMenu = NSMenu(title: "edgelesstype")
+        let dictionary = applicationMenu.addItem(withTitle: "字典…", action: #selector(showVocabulary), keyEquivalent: ",")
+        dictionary.target = self
+        let api = applicationMenu.addItem(withTitle: "API 設定…", action: #selector(showAPISettings), keyEquivalent: "")
+        api.target = self
+        let sounds = applicationMenu.addItem(withTitle: "提示音…", action: #selector(showSoundSettings), keyEquivalent: "")
+        sounds.target = self
+        applicationMenu.addItem(.separator())
+        let quit = applicationMenu.addItem(withTitle: "退出 edgelesstype", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        applicationItem.submenu = applicationMenu
+        bar.addItem(applicationItem)
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "編輯")
+        for (title, action, key) in [("復原", "undo:", "z"), ("剪下", "cut:", "x"),
+                                     ("複製", "copy:", "c"), ("貼上", "paste:", "v"),
+                                     ("全選", "selectAll:", "a")] {
+            edit.addItem(withTitle: title, action: Selector(action), keyEquivalent: key)
+        }
+        editItem.submenu = edit
+        bar.addItem(editItem)
+        NSApp.mainMenu = bar
+    }
+
+    private func rebuildMenu() {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "短按 Fn：聽寫開始／結束", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "短按 Fn+Shift 開始翻譯，單按 Fn 結束", action: nil, keyEquivalent: "")
+        menu.addItem(.separator())
+        let explain = menu.addItem(withTitle: "查看權限說明", action: #selector(showExplain), keyEquivalent: "")
+        explain.target = self
+        let enable = menu.addItem(withTitle: "啟用 Fn 鍵", action: #selector(enableKeys), keyEquivalent: "")
+        enable.target = self
+        let polish = menu.addItem(
+            withTitle: (config?.polish.enabled ?? false) ? "潤飾：開" : "潤飾：關（預設）",
+            action: #selector(togglePolish),
+            keyEquivalent: ""
+        )
+        polish.target = self
+        let api = menu.addItem(withTitle: "API 設定…", action: #selector(showAPISettings), keyEquivalent: "")
+        api.target = self
+        let sounds = menu.addItem(withTitle: "提示音…", action: #selector(showSoundSettings), keyEquivalent: "")
+        sounds.target = self
+        let vocabulary = menu.addItem(withTitle: "字典…", action: #selector(showVocabulary), keyEquivalent: "")
+        vocabulary.target = self
+        if let resident = config?.residentSpeech {
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Metal GPU 常駐辨識", action: nil, keyEquivalent: "")
+            for (key, title) in [("turbo", "Large-v3 Turbo"), ("small", "Small")] {
+                let item = menu.addItem(withTitle: title, action: #selector(selectSpeechModel(_:)), keyEquivalent: "")
+                item.representedObject = key
+                item.state = resident.selectedModel == key ? .on : .off
+                item.target = self
+            }
+        }
+        menu.addItem(.separator())
+        let quit = menu.addItem(withTitle: "結束", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        status.menu = menu
+    }
+
+    @objc private func showExplain() {
+        explainIfNeeded(then: nil)
+    }
+
+    @objc private func enableKeys() {
+        explainIfNeeded {
+            self.installKeys()
+        }
+    }
+
+    @objc private func togglePolish() {
+        guard var config else { return }
+        config.polish.enabled.toggle()
+        self.config = config
+        rebuildMenu()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showVocabulary()
+        return true
+    }
+
+    @objc private func showSoundSettings() {
+        if soundEditor == nil { soundEditor = SoundSettingsWindow(player: soundPlayer) }
+        soundEditor?.refresh()
+        soundEditor?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showAPISettings() {
+        if apiEditor == nil { apiEditor = APISettingsWindow() }
+        apiEditor?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func showVocabulary() {
+        guard session == .idle, !busy else { return }
+        do {
+            let settings = try AppPaths.vocabularyStore.load(fallbackTerms: config?.terms ?? [])
+            if vocabularyEditor == nil {
+                let editor = VocabularyWindow(settings: settings)
+                editor.onSave = { settings in try AppPaths.vocabularyStore.save(settings) }
+                editor.onSoundSettings = { [weak self] in self?.showSoundSettings() }
+                editor.onAPISettings = { [weak self] in self?.showAPISettings() }
+                editor.onQuit = { [weak self] in self?.quit() }
+                vocabularyEditor = editor
+            }
+            if let resident = config?.residentSpeech {
+                let info = ResidentSpeechEngine.shared.diagnostics
+                vocabularyEditor?.setModelStatus(info.ready && info.metal && info.pid != nil
+                    ? "\(resident.displayName) · Metal GPU · 已常駐" : "正在預載 \(resident.displayName)…")
+            }
+            vocabularyEditor?.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "無法讀取詞彙設定"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
+    @objc private func selectSpeechModel(_ sender: NSMenuItem) {
+        guard session == .idle, !busy, var config,
+              let selected = sender.representedObject as? String,
+              config.residentSpeech != nil else { return }
+        config.residentSpeech?.selectedModel = selected
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            try encoder.encode(config).write(to: AppPaths.projectRoot().appendingPathComponent("Config/app.json"), options: .atomic)
+            self.config = config
+            rebuildMenu()
+            warmSpeechEngine()
+        } catch { panel.showMessage("模型設定沒有儲存成功") }
+    }
+
+    private func warmSpeechEngine() {
+        guard let config, let resident = config.residentSpeech else { return }
+        status.button?.title = "載入"
+        vocabularyEditor?.setModelStatus("正在預載 \(resident.displayName)…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try ResidentSpeechEngine.shared.warmUp(config: config)
+                DispatchQueue.main.async {
+                    if !self.busy && self.session == .idle { self.status.button?.title = "edgelesstype" }
+                    self.vocabularyEditor?.setModelStatus("\(resident.displayName) · Metal GPU · 已常駐")
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.status.button?.title = "模型未就緒"
+                    self.vocabularyEditor?.setModelStatus("模型載入失敗，可從語音選單切換 Small 後重試。")
+                }
+            }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        soundPlayer.cancelPreview()
+        ResidentSpeechEngine.shared.shutdown()
+        cleanup(recorder?.stop())
+        retry?.invalidate()
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
+    }
+
+    private func explainIfNeeded(then next: (() -> Void)?) {
+        if explained || FileManager.default.fileExists(atPath: Self.explainedMarker.path) {
+            explained = true
+            next?()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "先看這段，再決定要不要授權"
+        alert.informativeText = Promise.beforePermission
+        alert.addButton(withTitle: "我知道了")
+        alert.addButton(withTitle: "先不要")
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            explained = true
+            try? FileManager.default.createDirectory(at: AppPaths.localSettingsDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try? Data("ok".utf8).write(to: Self.explainedMarker)
+            next?()
+        }
+    }
+
+    private static var explainedMarker: URL {
+        AppPaths.localSettingsDirectory.appendingPathComponent("open-typeless-explained")
+    }
+
+    private func installKeys() {
+        if monitor != nil { return }
+        do {
+            config = try AppPaths.loadConfig()
+        } catch {
+            panel.showMessage("讀不到設定")
+            return
+        }
+        if !askedListen {
+            askedListen = true
+            _ = CGRequestListenEventAccess()
+        }
+        let allowed = CGPreflightListenEventAccess()
+        let active = HotkeyMonitor()
+        active.tapMax = config?.tapMaxSeconds ?? Hotkey.defaultTapMax
+        active.onTap = { [weak self] kind in self?.handle(kind) }
+        active.onPasteKey = { [weak self] controlOnly, fromUs in
+            guard let self, !fromUs else { return false }
+            let handled = self.paster.notePasteKey(controlOnly: controlOnly, fromUs: false)
+            if handled { self.pendingTiming?.manualPaste = true }
+            return handled
+        }
+        let listening = allowed && (active.install() || active.install(listenOnly: true))
+        try? Data("allowed=\(allowed) mode=\(active.mode) listening=\(listening)\n".utf8).write(to: AppPaths.localSettingsDirectory.appendingPathComponent("open-typeless-status.txt"))
+        if listening {
+            self.monitor = active
+            rebuildMenu()
+            warmSpeechEngine()
+            retry?.invalidate()
+            retry = nil
+            NSApp.setActivationPolicy(.regular)
+            status.button?.title = "edgelesstype"
+            panel.showMessage("Fn 已啟用")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { self.panel.hide() }
+        } else {
+            status.button?.title = "語音·未授權"
+            panel.showMessage("Fn 還沒進來。請打開輸入監控裡的「edgelesstype」。")
+            if !toldMissing {
+                toldMissing = true
+                let alert = NSAlert()
+                alert.messageText = "還沒有輸入監控"
+                alert.informativeText = "系統設定要開的是「輸入監控」，不是輔助使用。把「edgelesstype」打開，Fn 才進得來。聲音仍然不會上傳。"
+                alert.addButton(withTitle: "打開輸入監控")
+                alert.addButton(withTitle: "先不要")
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(URL(string: PermissionPane.inputMonitoring)!)
+                }
+            }
+            if retry == nil {
+                retry = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+                    self?.installKeys()
+                }
+            }
+        }
+    }
+
+    private func handle(_ kind: TapKind) {
+        if busy {
+            panel.showMessage("上一句還在處理")
+            return
+        }
+        let action = Hotkey.decide(session: session, tap: kind)
+        switch action {
+        case .startDictation:
+            begin(.dictation)
+        case .startTranslation:
+            begin(.translation)
+        case .stopDictation, .stopTranslation:
+            finish()
+        case .ignore:
+            panel.showMessage("結束時只按 Fn，不要按著 Shift")
+        }
+    }
+
+    private func begin(_ mode: Session) {
+        guard let config else { return }
+        pendingTiming = nil
+        paster.cancelOffer()
+        // Read for each recording; user edits need no app restart. A broken
+        // vocabulary file must not turn on cloud processing or be overwritten.
+        recordingVocabulary = (try? AppPaths.vocabularyStore.load(fallbackTerms: config.terms))
+            ?? VocabularySettings(entries: config.terms.map { VocabularyEntry(word: $0) })
+        let recorder = Recorder(config: config)
+        do {
+            recordingURL = try recorder.start()
+            self.recorder = recorder
+            targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            session = mode
+            startedAt = Date()
+            status.button?.title = mode == .dictation ? "聽寫" : "翻譯"
+            recordingSoundPreset = soundPlayer.preset
+            soundPlayer.play(.start, preset: recordingSoundPreset)
+            panel.showRecording()
+        } catch {
+            panel.showMessage("麥克風沒有開始。請在系統設定允許這支程式使用麥克風。")
+        }
+    }
+
+    private func cancel() {
+        recordingSoundPreset = nil
+        soundPlayer.cancelPreview()
+        pendingTiming = nil
+        session = .idle
+        let url = recorder?.stop()
+        recorder = nil
+        startedAt = nil
+        cleanup(url)
+        busy = false
+        status.button?.title = "edgelesstype"
+        panel.hide()
+    }
+
+    private func finish() {
+        guard session != .idle else { return }
+        let mode = session
+        var timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds,
+            mode: mode == .translation ? "translation" : "dictation",
+            model: config?.residentSpeech?.displayName ?? "Small CPU")
+        session = .idle
+        soundPlayer.play(.stop, preset: recordingSoundPreset)
+        recordingSoundPreset = nil
+        busy = true
+        let url = recorder?.stop()
+        recorder = nil
+        let tooShort = startedAt.map { Date().timeIntervalSince($0) < 0.25 } ?? true
+        startedAt = nil
+        guard let url, !tooShort else {
+            cleanup(url)
+            busy = false
+            status.button?.title = "edgelesstype"
+            panel.hide()
+            return
+        }
+        timing.recordingStopSeconds = timing.elapsed()
+        let startedTiming = timing
+        status.button?.title = mode == .translation ? "譯中" : "轉寫"
+        panel.showWorking()
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.process(url: url, mode: mode, timing: startedTiming)
+        }
+    }
+
+    // Explicit development probe: accepts only silent PCM and copies the input.
+    func runSilenceProbe(source: URL) -> Int32 {
+        guard let audio = try? Data(contentsOf: source), SpeechContent.isDigitalSilence(audio) == true,
+              let loaded = try? AppPaths.loadConfig() else { print("silent-fixture-required"); return 2 }
+        config = loaded
+        recordingVocabulary = VocabularySettings(contextCorrectionEnabled: true)
+        let boardCount = NSPasteboard.general.changeCount
+        for mode: Session in [.dictation, .translation] {
+            let temp = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-silence-" + UUID().uuidString + ".wav")
+            do { try audio.write(to: temp) } catch { return 2 }
+            busy = true; panel.showWorking()
+            let timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds, mode: "silence-test", model: "test")
+            DispatchQueue.global(qos: .userInitiated).async { self.process(url: temp, mode: mode, timing: timing) }
+            let deadline = Date().addingTimeInterval(5)
+            while busy && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            guard !busy, !panel.isVisible, !paster.isOffering, NSPasteboard.general.changeCount == boardCount else {
+                panel.hide(); print("silence-check-failed"); return 1
+            }
+        }
+        for punctuation in [".", "。", "…", " "] { paster.offer(punctuation, into: nil) }
+        let ok = !paster.isOffering && NSPasteboard.general.changeCount == boardCount
+        print("silentPanelHidden=true clipboardUnchanged=\(ok) punctuationNotOffered=\(!paster.isOffering)")
+        return ok ? 0 : 1
+    }
+
+    private func process(url: URL, mode: Session, timing: DictationTiming) {
+        var timing = timing
+        let speechStarted = DispatchTime.now().uptimeNanoseconds
+        defer {
+            cleanup(url)
+            DispatchQueue.main.async {
+                self.busy = false
+                self.status.button?.title = "edgelesstype"
+            }
+        }
+        guard let config else { return }
+        let transcript: String
+        do {
+            transcript = try Transcriber(config: config, vocabulary: recordingVocabulary).transcribe(url: url)
+        } catch {
+            DispatchQueue.main.async { self.panel.showMessage("轉寫失敗，沒有貼上") }
+            return
+        }
+        timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
+        guard SpeechContent.hasWords(transcript) else {
+            DispatchQueue.main.async { self.panel.hide() }
+            return
+        }
+        let correctionStarted = DispatchTime.now().uptimeNanoseconds
+        let corrected: String
+        if recordingVocabulary.contextCorrectionEnabled && !transcript.isEmpty {
+            DispatchQueue.main.async { self.status.button?.title = "校正" }
+            timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
+            do {
+                corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config)
+                timing.correctionOutcome = corrected == transcript ? "unchanged" : "corrected"
+            } catch {
+                if case ContextCorrectionOutputError.rejected = error { timing.correctionOutcome = "rejected" }
+                else if let failure = error as? CloudError { timing.correctionOutcome = failure.rawValue }
+                else { timing.correctionOutcome = "request_failed" }
+                corrected = transcript
+            }
+        } else {
+            corrected = transcript
+        }
+        timing.correctionSeconds = Double(DispatchTime.now().uptimeNanoseconds - correctionStarted)/1e9
+        let plan = Policy.plan(mode: mode, transcript: corrected, polishEnabled: config.polish.enabled)
+        switch plan {
+        case .drop:
+            DispatchQueue.main.async { self.panel.hide() }
+        case .pasteRough(let rough):
+            // Submit once. Offering the polish as another paste duplicates
+            // text that has already reached the destination.
+            var finalText = rough
+            if Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
+               let polished = try? polish(rough, config: config), SpeechContent.hasWords(polished) {
+                finalText = polished
+            }
+            let text = finalText
+            timing.timeToPasteReadySeconds = timing.elapsed()
+            let readyTiming = timing
+            DispatchQueue.main.async {
+                self.pendingTiming = readyTiming
+                self.panel.showPending(text)
+                self.paster.offer(text, into: self.targetPID)
+            }
+        case .waitForEnglish(let chinese):
+            do {
+                let english = try translate(chinese, config: config)
+                guard SpeechContent.hasWords(english) else {
+                    DispatchQueue.main.async { self.panel.hide() }
+                    return
+                }
+                timing.timeToPasteReadySeconds = timing.elapsed()
+                let readyTiming = timing
+                DispatchQueue.main.async {
+                    self.pendingTiming = readyTiming
+                    self.panel.showPending(english)
+                    self.paster.offer(english, into: self.targetPID)
+                }
+            } catch {
+                DispatchQueue.main.async { self.panel.showMessage("翻譯失敗，沒有貼上中文") }
+            }
+        }
+    }
+
+    private func polish(_ text: String, config: AppConfig) throws -> String {
+        let body = ChatDraft.polish(text: text, timeout: max(6, config.polish.timeoutSeconds))
+        return try CloudAccess.complete(body, purpose: .correction)
+    }
+
+    private func translate(_ text: String, config: AppConfig) throws -> String {
+        let body = ChatDraft.translate(text: text, timeout: config.translate.timeoutSeconds, reasoningEffort: config.translate.reasoningEffort)
+        return try CloudAccess.complete(body, purpose: .translation)
+    }
+
+    private func finishTiming() {
+        guard var timing = pendingTiming else { return }
+        pendingTiming = nil
+        timing.timeToPasteConfirmedSeconds = timing.elapsed()
+        let info = ResidentSpeechEngine.shared.diagnostics
+        timing.workerPID = info.pid
+        timing.metal = info.metal
+        timing.recordedAt = ISO8601DateFormatter().string(from: Date())
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(timing) {
+            try? data.write(to: AppPaths.projectRoot().appendingPathComponent("Config/last-latency.json"), options: .atomic)
+        }
+    }
+
+    private func cleanup(_ url: URL?) {
+        guard let url else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
+let args = Array(CommandLine.arguments.dropFirst())
+if let first = args.first, ["verify-key", "set-key", "delete-key", "transcribe", "self-check", "help"].contains(first) {
+    if first == "self-check" {
+        exit(SelfCheck.run())
+    }
+    exit(CLI.run(CommandLine.arguments))
+}
+
+if args.first == "speech-benchmark" { exit(SpeechBenchmark.run(arguments: args)) }
+if args.first == "correction-probe" { exit(ContextCorrectionService.probe(onlyProtest: args.contains("--protest"), onlyPunctuation: args.contains("--punctuation"))) }
+if args.first == "focus-probe", args.count >= 2 { exit(MuseFocusProbe.run(args[1], activate: args.dropFirst(2).contains("--activate"), summary: args.dropFirst(2).contains("--summary"))) }
+let app = NSApplication.shared
+if args.first == "paste-timing-probe" { exit(PasteTimingProbe.run(arguments: args)) }
+if args.first == "paste-probe" {
+    exit(PasteProbe.run(arguments: args))
+}
+if args.first == "silence-probe", args.count == 2 {
+    app.setActivationPolicy(.accessory)
+    exit(AppController().runSilenceProbe(source: URL(fileURLWithPath: args[1])))
+}
+if args.first == "dictionary-preview" {
+    // Isolated visual QA: no personal dictionary, key table or microphone.
+    let words = ["Hermes", "grok bot", "claude", "threads", "cybercab", "pe", "prompt", "edgelesstype"]
+    let editor = VocabularyWindow(settings: VocabularySettings(contextCorrectionEnabled: true,
+        entries: words.map { VocabularyEntry(word: $0) }))
+    editor.setModelStatus("Large-v3 Turbo · Metal GPU · 已常駐")
+    editor.onClose = { app.terminate(nil) }
+    app.setActivationPolicy(.regular)
+    editor.showWindow(nil)
+    app.activate(ignoringOtherApps: true)
+    app.run()
+    exit(0)
+}
+if args.first == "sound-settings-preview" {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-sounds-ui-" + UUID().uuidString)
+    let player = SoundPlayer(store: SoundSettingsStore(url: root.appendingPathComponent("sounds.json")))
+    let editor = SoundSettingsWindow(player: player)
+    editor.onClose = { try? FileManager.default.removeItem(at: root); app.terminate(nil) }
+    app.setActivationPolicy(.regular)
+    editor.showWindow(nil)
+    app.activate(ignoringOtherApps: true)
+    app.run()
+    exit(0)
+}
+if args.first == "api-settings-preview" {
+    // Isolated UI QA: never read or modify the user's real key table.
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-ui-" + UUID().uuidString)
+    let keys = SecretLocations(keyringDirectory: root.appendingPathComponent("keys"), keyringFile: root.appendingPathComponent("keys/ring.json"), storeFile: root.appendingPathComponent("private/store.encrypted.json"))
+    let editor = APISettingsWindow(preferencesStore: CloudPreferencesStore(url: root.appendingPathComponent("cloud.json")), keyLocations: keys)
+    editor.onClose = { try? FileManager.default.removeItem(at: root); app.terminate(nil) }
+    app.setActivationPolicy(.regular)
+    editor.showWindow(nil)
+    app.activate(ignoringOtherApps: true)
+    app.run()
+    exit(0)
+}
+let controller = AppController()
+app.setActivationPolicy(.regular)
+app.delegate = controller
+app.run()

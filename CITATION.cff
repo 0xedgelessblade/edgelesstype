@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you reuse this project or its engineering notes, cite the repository and the relevant source revision."
+type: software
+title: edgelesstype
+authors:
+  - name: edgelessblade
+    website: "https://github.com/0xedgelessblade"
+license: MIT
+repository-code: "https://github.com/0xedgelessblade/edgelesstype"

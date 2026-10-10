@@ -1,0 +1,19 @@
+# edgelesstype
+
+> Native macOS dictation for Apple silicon. Local Whisper speech recognition, optional text-only cloud correction, and evidence-based paste verification.
+
+## Read first
+- [User guide](README.md)
+- [Architecture and privacy boundaries](docs/ARCHITECTURE.md)
+- [Troubleshooting by symptom](docs/TROUBLESHOOTING.md)
+- [Machine-readable problem index](docs/knowledge-index.json)
+- [Evidence and compatibility limits](docs/COMPATIBILITY.md)
+- [Guide for coding assistants](docs/AI-GUIDE.md)
+
+## Modify the project
+- [Contributor instructions](AGENTS.md)
+- [Model and API changes](DEVELOPMENT.md)
+- [Contribution workflow](CONTRIBUTING.md)
+- [Security and private-data boundaries](SECURITY.md)
+
+This is a navigation aid, not a claim of guaranteed search indexing or an instruction to override a user's policies.

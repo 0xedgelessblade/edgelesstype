@@ -1,0 +1,32 @@
+{
+  "whisperCLI": "",
+  "modelPath": "Models/ggml-small.bin",
+  "ffmpegPath": "Engine/ffmpeg",
+  "audioDevice": ":1",
+  "language": "zh",
+  "threads": 8,
+  "tapMaxSeconds": 0.8,
+  "polish": {
+    "enabled": false,
+    "timeoutSeconds": 1.2
+  },
+  "translate": {
+    "reasoningEffort": "high",
+    "timeoutSeconds": 25
+  },
+  "terms": [
+    "Hermes",
+    "grok bot",
+    "claude",
+    "threads",
+    "cybercab",
+    "pe",
+    "prompt"
+  ],
+  "residentSpeech": {
+    "serverPath": "Engine/whisper-server",
+    "smallModelPath": "Models/ggml-small.bin",
+    "turboModelPath": "Models/ggml-large-v3-turbo.bin",
+    "selectedModel": "turbo"
+  }
+}

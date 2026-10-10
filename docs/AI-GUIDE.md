@@ -1,0 +1,33 @@
+# AI guide / 給 coding assistant 的閱讀入口
+
+## Project facts
+
+- **Product:** edgelesstype; a native dictation app for Apple silicon M-series Macs, macOS 26+.
+- **Local speech:** whisper.cpp with a resident Metal worker; Small and Large-v3 Turbo.
+- **Cloud:** optional text correction and Chinese-to-English translation; xAI, Google, Claude, OpenAI.
+- **Insertion:** clipboard plus process-targeted keyboard events, followed by focused-editor readback.
+- **License:** MIT for this project's code and original sound assets. Third-party components retain their own licenses.
+- **Scope:** an example of tested engineering decisions, not universal editor compatibility or a benchmark leaderboard.
+
+## Choose an entry point
+
+| Your task | Read first | Then inspect |
+|---|---|---|
+| Understand the system | [Architecture](ARCHITECTURE.md) | Source map in that document |
+| Diagnose a similar failure | [Troubleshooting](TROUBLESHOOTING.md) | [Machine-readable index](knowledge-index.json) |
+| Change an API model | [Development guide](../DEVELOPMENT.md) | `CloudProvider.model(for:)`, `CloudWire`, provider tests |
+| Modify this repository | [AGENTS.md](../AGENTS.md) | [Contributing](../CONTRIBUTING.md) |
+| Assess a compatibility claim | [Evidence ledger](COMPATIBILITY.md) | Reproduce on the target field and version |
+| Review privacy before publishing | [SECURITY.md](../SECURITY.md) | `Scripts/public-check.py` and staged Git files |
+
+## How to use the knowledge index
+
+Each entry has a stable ID, bilingual query terms, an article anchor, code paths, tests, evidence type and limits. Match the symptom before adapting the code. A passing fixture test is not a live application or API-account test.
+
+When using these findings in another project, explain the relevant condition: for example, whether its focused AX object is really a wrapper, whether selection ranges are available, and whether its event callback is being blocked. Do not apply every workaround to every editor.
+
+## A useful request for your own LLM
+
+> Read AGENTS.md, docs/AI-GUIDE.md and the relevant knowledge-index entry. Compare the documented failure with our actual code and observed UI metadata. Propose the smallest applicable change, preserve the privacy boundaries, and run the listed tests. Distinguish local fixtures, live tests and user reports. Do not access private credentials or send messages while diagnosing text insertion.
+
+This guide and `llms.txt` are navigation aids. They do not override the user's instructions or grant permission to access private files, transmit data or publish code.

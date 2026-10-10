@@ -1,0 +1,318 @@
+{
+  "schema_version": 1,
+  "project": "edgelesstype",
+  "platform": "Apple silicon M-series; macOS 26+",
+  "problems": [
+    {
+      "id": "paste-ax-setter-false-success",
+      "title_en": "AX setter false success",
+      "title_zh": "AX 回傳成功但沒有插入",
+      "queries": [
+        "AXSelectedText succeeds no text",
+        "Hermes paste failed",
+        "AX 寫入成功但沒文字"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#paste-ax-setter-false-success",
+      "source_files": [
+        "Sources/OpenTypeless/Paster.swift",
+        "Sources/OpenTypelessCore/PasteConfirmation.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [
+        "testWebSetterFalseSuccessDoesNotDismiss"
+      ],
+      "evidence": "development observation plus core readback tests",
+      "limits": "A setter result does not establish insertion in any particular editor."
+    },
+    {
+      "id": "paste-clipboard-read-not-proof",
+      "title_en": "Clipboard read is not insertion proof",
+      "title_zh": "剪貼簿讀取不等於貼入",
+      "queries": [
+        "clipboard read paste failed",
+        "preview hides too early",
+        "剪貼簿被讀但沒有貼上"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#paste-clipboard-read-not-proof",
+      "source_files": [
+        "Sources/OpenTypeless/Paster.swift",
+        "Sources/OpenTypelessCore/PasteConfirmation.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [
+        "testExistingMatchingSentenceDoesNotCountAsNewPaste"
+      ],
+      "evidence": "code invariant and core tests",
+      "limits": "This does not fix focus or keyboard transport by itself."
+    },
+    {
+      "id": "paste-wrapper-focus",
+      "title_en": "Focused element is a wrapper",
+      "title_zh": "焦點落在包裝按鈕",
+      "queries": [
+        "AXFocusedUIElement AXButton contenteditable",
+        "AXSelectedTextMarkerRange editable ancestor",
+        "Muse input AXButton"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#paste-wrapper-focus",
+      "source_files": [
+        "Sources/OpenTypeless/WebKitFocus.swift",
+        "Sources/OpenTypeless/Paster.swift",
+        "Sources/OpenTypeless/MuseFocusProbe.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [],
+      "evidence": "live development observation; native retest required",
+      "limits": "Optional runtime symbols and editor trees can change. Never click a send wrapper as a workaround."
+    },
+    {
+      "id": "paste-duplicate-insertion",
+      "title_en": "Paste inserts twice",
+      "title_zh": "一次貼入兩份文字",
+      "queries": [
+        "CGEvent paste twice",
+        "Electron duplicate paste",
+        "語音輸入重複貼上"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#paste-duplicate-insertion",
+      "source_files": [
+        "Sources/OpenTypeless/Paster.swift",
+        "Sources/OpenTypeless/PasteProbe.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [
+        "testReplacingSelectionWithoutDuplicatingSurroundingText"
+      ],
+      "evidence": "live fixed-text probes plus pure selection tests",
+      "limits": "The working event route is not a universal root-cause claim. Test the exact field."
+    },
+    {
+      "id": "paste-manual-recovery",
+      "title_en": "Manual paste leaves the preview visible",
+      "title_zh": "手動貼上後提示框未收起",
+      "queries": [
+        "manual Cmd-V overlay stays",
+        "Ctrl+V 提示框不消失",
+        "event tap AX query blocks"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#paste-manual-recovery",
+      "source_files": [
+        "Sources/OpenTypeless/main.swift",
+        "Sources/OpenTypeless/Paster.swift",
+        "Sources/OpenTypeless/PasteProbe.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [],
+      "evidence": "live manual-key probes; readback logic tested separately",
+      "limits": "Core tests alone do not simulate a native event tap or target application."
+    },
+    {
+      "id": "speech-empty-or-punctuation",
+      "title_en": "Silence produces a period",
+      "title_zh": "靜音或純標點誤貼",
+      "queries": [
+        "Whisper silence period",
+        "BLANK_AUDIO",
+        "沒說話卻出現句點"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#speech-empty-or-punctuation",
+      "source_files": [
+        "Sources/OpenTypelessCore/SpeechContent.swift",
+        "Sources/OpenTypelessCore/Policy.swift",
+        "Sources/OpenTypeless/Paster.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/SpeechContentTests.swift"
+      ],
+      "test_names": [
+        "testPunctuationOnlyIsDroppedBeforeEitherMode",
+        "testSilenceGateDoesNotDropQuietSpeechOrUnknownAudio"
+      ],
+      "evidence": "unit tests and silent-file integration probe",
+      "limits": "Digital silence detection is not general VAD or a guarantee against word hallucinations in noise."
+    },
+    {
+      "id": "speech-homophone-errors",
+      "title_en": "Contextual homophone correction",
+      "title_zh": "中英夾雜與同音錯字",
+      "queries": [
+        "Chinese homophone correction",
+        "抬官抗議 抬棺抗議",
+        "權限 全線 退出 推出"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#speech-homophone-errors",
+      "source_files": [
+        "Sources/OpenTypelessCore/Vocabulary.swift",
+        "Sources/OpenTypeless/ContextCorrectionService.swift",
+        "Sources/OpenTypeless/DictationTiming.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/VocabularyTests.swift",
+        "Tests/OpenTypelessTests/SpeechContentTests.swift"
+      ],
+      "test_names": [
+        "testCorrectionPromptStaysCompactWithoutInternalDictionaryIDs",
+        "testProtestPhraseCorrectionAndLegitimateOfficials"
+      ],
+      "evidence": "core tests and one documented fixed-case xAI run",
+      "limits": "A fixed corpus result is not general recognition accuracy. Distinguish unchanged, failed and rejected outcomes."
+    },
+    {
+      "id": "speech-cold-start",
+      "title_en": "Short dictation pays model startup cost",
+      "title_zh": "短句反覆等待模型載入",
+      "queries": [
+        "Whisper resident Metal worker",
+        "short dictation cold start",
+        "語音模型常駐"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#speech-cold-start",
+      "source_files": [
+        "Sources/OpenTypeless/ResidentSpeechEngine.swift",
+        "Patches/whisper-server.patch",
+        "Sources/OpenTypeless/DictationTiming.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/OpenTypelessTests.swift"
+      ],
+      "test_names": [],
+      "evidence": "local model startup and public-audio transcription checks",
+      "limits": "Latency varies by device and model. Core tests do not measure GPU performance."
+    },
+    {
+      "id": "api-provider-integration",
+      "title_en": "Provider request formats differ",
+      "title_zh": "各家 API 串接與金鑰管理",
+      "queries": [
+        "OpenAI Responses Claude Messages Gemini generateContent",
+        "API key save delete",
+        "LLM provider adapter"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#api-provider-integration",
+      "source_files": [
+        "Sources/OpenTypelessCore/CloudProvider.swift",
+        "Sources/OpenTypeless/APISettingsWindow.swift",
+        "Sources/OpenTypelessCore/SecretStore.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/CloudProviderTests.swift"
+      ],
+      "test_names": [
+        "testRealClientTransportUsesAdapterAndSanitizesErrors",
+        "testFourKeysSurviveSwitchingAndDeletingOne"
+      ],
+      "evidence": "official schemas, mock transport, local UI tests; selected xAI live tests",
+      "limits": "No claim that all real accounts or every provider model have been tested."
+    },
+    {
+      "id": "release-personal-paths",
+      "title_en": "Public artifacts expose personal paths",
+      "title_zh": "公開產物殘留個人資訊",
+      "queries": [
+        "macOS binary build path privacy",
+        "gitignore sensitive data",
+        "開源 個人路徑 洩漏"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#release-personal-paths",
+      "source_files": [
+        "Scripts/public-check.py",
+        "Scripts/pack-app.sh",
+        "Scripts/bootstrap.sh"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/CloudProviderTests.swift"
+      ],
+      "test_names": [
+        "testCorruptEncryptedStoreIsNotOverwritten"
+      ],
+      "evidence": "source and artifact scanning, export/rebuild verification",
+      "limits": "Automated scans do not prove absolute anonymity; review metadata and Git identity too."
+    },
+    {
+      "id": "paste-utf-16-offsets",
+      "title_en": "AX ranges use UTF-16 offsets",
+      "title_zh": "emoji 後的 AX 選取範圍",
+      "queries": [
+        "AXSelectedTextRange emoji UTF16",
+        "Swift NSString NSRange insertion",
+        "emoji 貼入位置"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#paste-utf-16-offsets",
+      "source_files": [
+        "Sources/OpenTypelessCore/PasteConfirmation.swift",
+        "Sources/OpenTypeless/Paster.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [
+        "testChineseInsertedAtUTF16CursorAfterEmoji",
+        "testInvalidRangeDoesNotCrashOrConfirmUnchangedText"
+      ],
+      "evidence": "core tests for range replacement and invalid offsets",
+      "limits": "An editor that omits selection offsets still cannot provide an exact insertion position."
+    },
+    {
+      "id": "ui-overlay-steals-focus",
+      "title_en": "Recording overlay steals focus",
+      "title_zh": "提示框搶走輸入焦點",
+      "queries": [
+        "NSPanel nonactivating canBecomeKey",
+        "dictation overlay steals focus",
+        "提示框搶焦點"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#ui-overlay-steals-focus",
+      "source_files": [
+        "Sources/OpenTypeless/RecordChrome.swift",
+        "Sources/OpenTypeless/Paster.swift",
+        "Sources/OpenTypeless/PasteProbe.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+      ],
+      "test_names": [],
+      "evidence": "native panel implementation and manual target-field tests; core tests cover confirmation only",
+      "limits": "The user, another app, or a system dialog can still change focus."
+    },
+    {
+      "id": "speech-missing-punctuation",
+      "title_en": "Missing sentence punctuation",
+      "title_zh": "整段沒有標點",
+      "queries": [
+        "missing punctuation",
+        "no commas or periods",
+        "整段沒有標點",
+        "中英夾雜斷句"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#speech-missing-sentence-punctuation",
+      "source_files": [
+        "Sources/OpenTypelessCore/SentencePunctuation.swift",
+        "Sources/OpenTypelessCore/Vocabulary.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/SentencePunctuationTests.swift"
+      ],
+      "test_names": [
+        "testCorrectionAndPunctuationShareOneValidatedResponse",
+        "testProtectsEnglishNumbersURLsPathsAndCode",
+        "testEmptyAndPunctuationOnlyCannotCreateOutput"
+      ],
+      "evidence": [
+        "Deterministic validator tests; fixed cloud probe available."
+      ],
+      "limits": [
+        "Needs enabled cloud correction; punctuation placement is not guaranteed by character preservation."
+      ]
+    }
+  ]
+}

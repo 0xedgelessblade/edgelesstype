@@ -1,0 +1,22 @@
+edgelesstype — M 系列 Mac
+
+適用 Apple Silicon M 系列、macOS 26 以上。
+將整個 edgelesstype-Mac 資料夾放在「文件」等固定位置，開啟 edgelesstype.app。
+不要只移動 App；Config、Models、Engine 必須與它放在一起。
+
+依提示允許麥克風、輔助使用和輸入監控，再重新開啟 App。
+等模型顯示已常駐後，在文字輸入框短按 Fn 開始說話，再短按 Fn 結束。
+在「提示音…」可切換精修提示音（預設）、柔和雙音（B）、低沉短音（C），並試聽開始／結束音。
+App 會自動貼入；需要補貼時可用 ⌘V 或 Ctrl+V。App 不會自動送出訊息。
+Fn + Shift 開始中翻英，再短按 Fn 結束。
+
+雲端校正與翻譯：
+開啟「API 設定…」，選擇 xAI、Google、Claude 或 OpenAI。
+貼上自己的 API 金鑰，按「儲存並使用」，再按「測試連線」。
+在字典視窗開啟「根據整句上下文校正」。
+每家金鑰分開加密保存，可在同一視窗刪除。未設定金鑰也能本機辨識。
+錄音不會送到雲端；只送轉寫文字及字典。
+
+預設字典只包含英文詞條；可自行新增、搜尋、刪除。
+Turbo 與 Small 模型均在本機使用 Metal GPU。
+原始碼中的 DEVELOPMENT.md 說明如何請自己的 Codex 修改模型或新增 API。
