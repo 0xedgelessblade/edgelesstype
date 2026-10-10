@@ -9,11 +9,26 @@
 給 **Apple Silicon M 系列 Mac、macOS 26 以上**使用的開源語音輸入 App。
 錄音與 Whisper 語音辨識留在本機；可選擇自己的 API 金鑰，做上下文校正和中翻英。
 
+## 不會 CLI？交給你的 AI 安裝
+
+**目前提供原始碼安裝，暫不提供 DMG。** 你不必自己學會終端機指令，但需要一個**已獲你授權、能在你的 Mac 操作終端機與檔案的 coding assistant**；普通聊天視窗只能給建議，不能代替你安裝。
+
+把專案網址交給它並說「請幫我安裝」，或直接複製下方整段：
+
+> 請幫我在這台 Mac 安裝 https://github.com/0xedgelessblade/edgelesstype 。先讀 README、AGENTS.md、SECURITY.md 和 docs/INSTALL_WITH_AI.md，按指南完成相容性檢查、安裝必要工具、下載並驗證模型、建置和開啟 App。使用我指定的安裝位置；未指定時先問我一次。若不符合 Apple M 系列與 macOS 26 以上的要求，請停止並說明原因。
+>
+> 個資與金鑰保護優先：不要讀取既有秘密檔案，不要要求我在聊天貼金鑰或系統密碼，不要覆寫私人設定、關閉系統安全防護或上傳日誌。API 金鑰由我在 App 裡自行輸入；不要代我啟用雲端功能。需要系統權限時告訴我如何操作。最後引導我測試錄音和貼入，分別回報哪些已驗證、哪些仍需我確認；不要把建置成功當成全部功能都已通過。
+
+**你仍需親自處理的部分：**必要的系統密碼／安裝確認、麥克風等權限，以及自己的 API 金鑰。一般本機聽寫不需要金鑰；雲端校正和中翻英才需要。第一次安裝會下載約 2.1 GB 語音模型，另外需要工具與建置空間。
+
+**給接手安裝的 LLM：**請從 [逐步安裝指南](docs/INSTALL_WITH_AI.md) 開始。指南包含缺少工具時的處理、既有安裝的保護、失敗時的排查、權限交接與完成標準；它不會授予超出使用者或工具規則的權限。本專案不提供作者的金鑰，也沒有自動診斷上傳功能。使用雲端 coding assistant 的資料處理，另依該工具的政策與使用者授權。
+
 ## 閱讀入口 / Start here
 
 | 想做什麼 | 從哪裡開始 |
 |---|---|
-| 安裝與使用 | 下方的使用方式、原始碼安裝與 API 設定 |
+| 交給 AI 安裝 | [逐步安裝指南](docs/INSTALL_WITH_AI.md) |
+| 自己安裝與使用 | 下方的使用方式、原始碼安裝與 API 設定 |
 | 了解設計與資料流 | [Architecture](docs/ARCHITECTURE.md) |
 | 找到類似問題的答案 | [Troubleshooting](docs/TROUBLESHOOTING.md) |
 | 讓自己的 LLM 研究或改造 | [AI guide](docs/AI-GUIDE.md)、[machine-readable index](docs/knowledge-index.json) |

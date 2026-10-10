@@ -1,5 +1,6 @@
 # edgelesstype contributor instructions
 
+- For an installation request, follow `docs/INSTALL_WITH_AI.md` and its privacy-first completion checklist. Do not treat installation as authorization to read secrets, enable cloud features, upload diagnostics, or publish code.
 - Support only Apple silicon M-series Macs on macOS 26 or later. Do not add Intel, Windows, Linux or CPU-only branches.
 - Keep the user interface small: provider selection, encrypted API key save/test/delete, and the dictionary. Model customization belongs in code, not a large model picker.
 - Start model changes in `Sources/OpenTypelessCore/CloudProvider.swift`. Follow `DEVELOPMENT.md`; check current official provider docs before changing payload parameters.
