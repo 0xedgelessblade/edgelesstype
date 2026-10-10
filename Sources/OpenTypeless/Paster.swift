@@ -12,6 +12,7 @@ final class Paster {
     private var generation = UUID()
     private var verification: Timer?
     private var sending = false
+    private let clipboard = ClipboardLease()
 
     func offer(_ text: String, into pid: pid_t?) {
         cancelOffer()
@@ -21,8 +22,7 @@ final class Paster {
         targetPID = pid
         isOffering = true
         let board = NSPasteboard.general
-        board.clearContents()
-        guard board.setString(text, forType: .string) else { return }
+        guard clipboard.publish(text) else { return }
         publishedCount = board.changeCount
         guard AXIsProcessTrusted(), let pid,
               let target = NSRunningApplication(processIdentifier: pid) else { return }
@@ -73,8 +73,9 @@ final class Paster {
         pendingText = nil
         targetElement = nil
         before = nil
-        // Retain the dictated text. Cancelling must not erase it or restore
-        // stale clipboard data over something the user has just copied.
+        // Failed/cancelled offers retain the dictated text for manual recovery.
+        // Only verified insertion restores the previous clipboard.
+        clipboard.discard()
     }
 
     private func sendPasteChord(token: UUID, manual: Bool = false) {
@@ -126,6 +127,7 @@ final class Paster {
             }
             if let element = self.targetElement, let before = self.before, let text = self.pendingText,
                PasteConfirmation.confirms(text, before: before, after: Self.snapshot(element)) {
+                self.clipboard.finish(confirmed: true)
                 self.cancelOffer()
                 self.onDismiss?()
             } else if Date() >= deadline {

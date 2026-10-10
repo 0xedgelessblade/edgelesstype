@@ -2,6 +2,8 @@ import AppKit
 import OpenTypelessCore
 
 enum CloudAccess {
+    static var offlineProbe = false
+    private(set) static var offlineProbeRequests = 0
     static var preferences: CloudPreferencesStore {
         CloudPreferencesStore(url: AppPaths.projectRoot().appendingPathComponent("Config/cloud.json"))
     }
@@ -9,9 +11,46 @@ enum CloudAccess {
         SecretStore(locations: SecretLocations.production(projectRoot: AppPaths.projectRoot()), recordName: provider.rawValue)
     }
     static func complete(_ body: ChatBody, purpose: CloudPurpose) throws -> String {
+        if offlineProbe { offlineProbeRequests += 1; throw CloudError.invalidRequest }
         let provider = try preferences.load().provider
         let key = String(decoding: try store(provider).readSecret(), as: UTF8.self)
-        return try CloudClient().complete(body, provider: provider, purpose: purpose, key: key)
+        return try CloudClient().complete(body, provider: provider, purpose: purpose, key: key) { model in
+            CloudModelStatus.record(model, provider: provider, purpose: purpose)
+        }
+    }
+}
+
+/// Main-queue, process-local display state. No files, telemetry, or extra requests.
+private enum CloudModelStatus {
+    static let changed = Notification.Name("edgelesstypeCloudModelDidRespond")
+    private struct Reply { let model: String? }
+    private static var last: [String: Reply] = [:]
+    private static func key(_ provider: CloudProvider, _ purpose: CloudPurpose) -> String {
+        provider.rawValue + (purpose == .correction ? ":correction" : ":translation")
+    }
+    static func record(_ model: String?, provider: CloudProvider, purpose: CloudPurpose) {
+        DispatchQueue.main.async {
+            last[key(provider, purpose)] = Reply(model: model)
+            NotificationCenter.default.post(name: changed, object: nil)
+        }
+    }
+    static func description(for provider: CloudProvider) -> String {
+        let correction = last[key(provider, .correction)]?.model ?? provider.model(for: .correction)
+        let translation = last[key(provider, .translation)]?.model ?? provider.model(for: .translation)
+        return "校正：\(correction) · 翻譯：\(translation)"
+    }
+    static func detail(for provider: CloudProvider) -> String {
+        [CloudPurpose.correction, .translation].map { purpose in
+            let title = purpose == .correction ? "校正" : "翻譯"
+            let requested = provider.model(for: purpose)
+            guard let reply = last[key(provider, purpose)] else {
+                return "\(title)：請求模型 \(requested)；本次啟動尚未收到成功回覆。"
+            }
+            guard let reported = reply.model else {
+                return "\(title)：請求模型 \(requested)；服務商未回傳模型名稱。"
+            }
+            return "\(title)：請求模型 \(requested)；最近成功回覆 \(reported)。"
+        }.joined(separator: "\n")
     }
 }
 
@@ -23,6 +62,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
     private let provider = NSPopUpButton()
     private let keyField = NSSecureTextField()
     private let models = NSTextField(wrappingLabelWithString: "")
+    private var modelObserver: NSObjectProtocol?
     private let savedStatus = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private var controls: [NSControl] = []
@@ -42,8 +82,12 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         build()
         if let chosen = try? preferencesStore.load().provider,
            let index = CloudProvider.allCases.firstIndex(of: chosen) { provider.selectItem(at: index) }
+        modelObserver = NotificationCenter.default.addObserver(forName: CloudModelStatus.changed, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshModels()
+        }
         changed(); window.center()
     }
+    deinit { if let modelObserver { NotificationCenter.default.removeObserver(modelObserver) } }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func build() {
@@ -63,6 +107,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         addButton("取得 API 金鑰", NSRect(x: 411, y: 321, width: 170, height: 32), #selector(openKeyPage))
         models.frame = NSRect(x: 26, y: 284, width: 550, height: 29); models.textColor = .secondaryLabelColor
         view.addSubview(models)
+        models.font = .systemFont(ofSize: 12)
         savedStatus.frame = NSRect(x: 26, y: 252, width: 550, height: 24); view.addSubview(savedStatus)
         keyField.frame = NSRect(x: 26, y: 207, width: 465, height: 32)
         keyField.placeholderString = "貼上新金鑰；留白會沿用已儲存的金鑰"
@@ -84,13 +129,17 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
     }
     @objc private func changed() {
         generation = UUID(); keyField.stringValue = ""; status.stringValue = ""
-        models.stringValue = selection.modelsDescription
+        refreshModels()
         refreshStatus()
+    }
+    private func refreshModels() {
+        models.stringValue = CloudModelStatus.description(for: selection)
+        models.toolTip = CloudModelStatus.detail(for: selection)
     }
     private func refreshStatus() {
         let exists = (try? store(selection).verify()) == true
         let active = (try? preferencesStore.load().provider) == selection
-        savedStatus.stringValue = (exists ? "已儲存金鑰" : "尚未儲存金鑰") + (active ? " · 目前選用" : "")
+        savedStatus.stringValue = (exists ? "已儲存金鑰" : "尚未儲存金鑰") + (active ? " · 目前選用" : " · 尚未選用")
     }
     @objc private func openKeyPage() { NSWorkspace.shared.open(selection.keyPage) }
     @objc private func pasteKey() { keyField.stringValue = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
@@ -133,7 +182,11 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let body = ChatBody(model: selected.model(for: .correction), timeoutSeconds: 20, reasoningEffort: nil,
                                 system: "Reply with OK only.", user: "Connection test.")
-            let result = Result { try CloudClient().complete(body, provider: selected, purpose: .correction, key: key) }
+            let result = Result {
+                try CloudClient().complete(body, provider: selected, purpose: .correction, key: key) { model in
+                    CloudModelStatus.record(model, provider: selected, purpose: .correction)
+                }
+            }
             DispatchQueue.main.async {
                 guard let self, self.generation == token else { return }
                 self.controls.forEach { $0.isEnabled = true }

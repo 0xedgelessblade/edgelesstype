@@ -31,6 +31,7 @@ flowchart TD
 | 責任 | 程式碼 | 修改時需保留的條件 |
 |---|---|---|
 | App 狀態、Fn 事件、錄音生命週期 | [main.swift](../Sources/OpenTypeless/main.swift) | event-tap callback 先返回；錄音停止後清理暫存檔 |
+| 原生收音與就緒提示音 | [Recorder.swift](../Sources/OpenTypeless/Recorder.swift) | 第一段音訊寫入後才播起音；不裁掉開頭，停止後才播結束音 |
 | 聽寫／翻譯狀態決策 | [Session.swift](../Sources/OpenTypelessCore/Session.swift)、[Policy.swift](../Sources/OpenTypelessCore/Policy.swift) | Fn+Shift 只開始翻譯，單按 Fn 結束 |
 | 常駐本機辨識 | [ResidentSpeechEngine.swift](../Sources/OpenTypeless/ResidentSpeechEngine.swift) | localhost、每次啟動 token、父程序退出後停止 worker |
 | 空白與標點攔截 | [SpeechContent.swift](../Sources/OpenTypelessCore/SpeechContent.swift) | 不把純標點或已知空白標記當成文字；保留數字、程式碼與 emoji |
@@ -51,7 +52,7 @@ flowchart TD
 - **雲端資料**：轉寫文字、字典和固定提示詞。字典的內部 UUID 與空欄位不送出。
 - **API 金鑰**：加密存檔；解密金鑰表留在使用者本機設定目錄。兩者不加入公開來源包。
 - **診斷**：時間、程序狀態及校正結果類型，不保存錄音、轉寫內容或剪貼簿原文。
-- **剪貼簿**：有效轉寫在需要貼入時會成為系統剪貼簿內容；App 不把它描述成私密通道，也不以恢復舊剪貼簿掩蓋未完成貼入。
+- **剪貼簿**：有效轉寫在需要貼入時會成為系統剪貼簿內容；確認插入後，由 [ClipboardLease](../Sources/OpenTypeless/ClipboardLease.swift) 還原記憶體中的先前內容，僅在 changeCount 仍屬於此次發布時執行。未確認或已被其他複製取代時不還原；備份不寫檔、不上傳。
 
 細節與發布邊界見 [SECURITY.md](../SECURITY.md)。
 

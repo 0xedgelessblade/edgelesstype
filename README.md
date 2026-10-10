@@ -44,11 +44,12 @@
 
 ## 使用方式
 
-- 點進任意文字輸入框，短按 Fn 開始說話，再短按 Fn 結束並貼入。
+- 點進任意文字輸入框，短按 Fn，聽到提示音即可開始說話，再短按 Fn 結束並貼入。
 - 按住 Shift 再短按 Fn 開始中翻英，隨即放開 Shift；說完只短按 Fn 結束。
 - 字典主畫面有快捷鍵提示與「操作指南」。Small／Turbo 負責本機辨識；翻譯使用「API 設定」目前選用的雲端服務與自己的金鑰。
 - 自動貼入未出現時，可按 ⌘V 或 Ctrl+V 補貼；確認輸入框收到文字後，提示框才收起。
-- 沒有辨識出文字、太短的錄音或只有句點等標點時，提示框直接收起，不貼入、不更動剪貼簿。
+- 按 Fn 就啟動原生收音，第一段音訊寫入後播放開始音；不等音效結束，也不裁掉開頭。開始音可能被麥克風收到，本版未啟用回音消除。錄音仍經本機人聲偵測；沒有有效文字或只有標點時不貼入。
+- 確認貼入成功後還原先前剪貼簿；若期間複製了新內容，就保留新內容。無法確認或取消時，語音文字留在剪貼簿，供手動補貼。
 - App 不會自動按 Enter 或傳送訊息。
 - 點 Dock 圖示打開字典；可以新增、搜尋、刪除詞條。
 - 字典或選單列的「提示音…」提供精修提示音（預設）、柔和雙音（B）、低沉短音（C），可試聽並自動記住選擇；下次錄音生效。
@@ -70,7 +71,7 @@ bash Scripts/pack-app.sh
 open edgelesstype.app
 ```
 
-`bootstrap.sh` 會下載固定版本的 whisper.cpp，套用本機服務保護修補，建置 Apple Silicon 引擎，並下載、驗證兩個模型。模型合計約 2.1 GB，只需準備一次。
+`bootstrap.sh` 會下載固定版本的 whisper.cpp，套用本機服務保護修補，建置 Apple Silicon 引擎，並下載、驗證兩個辨識模型與約 0.9 MB 的 Silero 人聲偵測模型。模型合計約 2.1 GB，只需準備一次。
 
 第一次啟動依提示允許麥克風、輔助使用和輸入監控。開啟權限後如 Fn 尚未啟用，退出 App 再開一次。預設是自行簽署的本地 App，未經 Apple 公證；不需要關閉系統安全保護。
 
@@ -91,12 +92,16 @@ open edgelesstype.app
 |---|---|---|
 | xAI | 校正 `grok-4.3`；翻譯 `grok-4.7` | [xAI Console](https://console.x.ai/) |
 | Google | `gemini-3.8-flash` | [Google AI Studio](https://aistudio.google.com/api-keys) |
-| Claude | `claude-haiku-5-5` | [Claude Platform](https://platform.claude.com/settings/keys) |
-| OpenAI | `gpt-5.4-mini` | [OpenAI Platform](https://platform.openai.com/api-keys) |
+| Claude | `claude-haiku-5-5`；校正與翻譯皆關閉推理 | [Claude Platform](https://platform.claude.com/settings/keys) |
+| OpenAI | `gpt-6-luna` | [OpenAI Platform](https://platform.openai.com/api-keys) |
 
 xAI 已於 2026-05-15 將舊的 Grok 4.1 Fast API 名稱轉向 Grok 4.3 並按新模型計費。本專案直接指定 `grok-4.3`、校正使用 `reasoning_effort: none`，避免舊名稱與實際費率不一致。詳見 [官方遷移說明](https://docs.x.ai/developers/migration/may-15-retirement)。
 
+Claude 明確送出 `thinking: {"type": "disabled"}`，搭配 `output_config.effort: "low"`；只設 low 並不等於關閉推理。[官方說明](https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5)
+
 目前 xAI 的校正與翻譯使用不同預設模型；其他三家暫用同一模型處理兩項任務，尚未完成各自的分工選型比較。程式支援分別指定兩種用途。
+
+API 設定會分別顯示校正與翻譯最近成功回覆的模型名稱；尚無回覆或服務商沒有提供名稱時，顯示請求設定，滑鼠提示會說明來源。這項顯示只保留在本次啟動的記憶體，不保存轉寫，也不額外呼叫 API。
 
 UI 刻意只提供四家服務商，不做大型模型目錄。模型可用性與額度由各家帳戶決定；自己的金鑰應先用 UI 測試。API 適配有本機請求／回覆測試，不代表每個使用者的付費帳戶均已實測。
 
@@ -136,4 +141,4 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 ## 授權與來源
 
 本專案程式碼、原創提示音採 [MIT License](LICENSE)，公開作者為 **edgelessblade**。
-語音引擎使用 [whisper.cpp v1.8.1](https://github.com/ggml-org/whisper.cpp/tree/a91dd3be72f70dd1b3cb6e252f35fa17b93f596c)，模型來自 [Whisper](https://huggingface.co/ggerganov/whisper.cpp)，錄音工具為 [FFmpeg](https://ffmpeg.org/)。第三方元件各自的授權仍適用；本來源包不重新分發其二進位檔。
+語音引擎使用 [whisper.cpp v1.8.1](https://github.com/ggml-org/whisper.cpp/tree/a91dd3be72f70dd1b3cb6e252f35fa17b93f596c)，模型來自 [Whisper](https://huggingface.co/ggerganov/whisper.cpp)，錄音使用 macOS 原生音訊引擎；[FFmpeg](https://ffmpeg.org/) 保留供音訊工具與測試使用。第三方元件各自的授權仍適用；本來源包不重新分發其二進位檔。

@@ -23,15 +23,19 @@ final class SoundPlayer {
         previewTail?.cancel(); previewTail = nil
         cue?.stop()
     }
-    private func sound(_ phase: SoundCue, preset: SoundPreset) -> NSSound? {
-        let url = bundle.url(forResource: preset.resource(for: phase), withExtension: "wav")
+    func cueURL(_ phase: SoundCue, preset override: SoundPreset? = nil) -> URL? {
+        let selected = override ?? preset
+        return bundle.url(forResource: selected.resource(for: phase), withExtension: "wav")
             ?? bundle.url(forResource: SoundPreset.standard.resource(for: phase), withExtension: "wav")
-        return url.flatMap { NSSound(contentsOf: $0, byReference: true) }
     }
-    func play(_ phase: SoundCue, preset override: SoundPreset? = nil) {
+    private func sound(_ phase: SoundCue, preset: SoundPreset) -> NSSound? {
+        cueURL(phase, preset: preset).flatMap { NSSound(contentsOf: $0, byReference: true) }
+    }
+    @discardableResult func play(_ phase: SoundCue, preset override: SoundPreset? = nil) -> TimeInterval {
         cancelPreview()
         cue = sound(phase, preset: override ?? preset)
-        cue?.play()
+        guard cue?.play() == true else { return 0 }
+        return cue?.duration ?? 0
     }
     @discardableResult func preview() -> Bool {
         cancelPreview()

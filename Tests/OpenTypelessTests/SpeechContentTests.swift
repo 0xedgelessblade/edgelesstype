@@ -10,7 +10,7 @@ final class SpeechContentTests: XCTestCase {
         }
     }
     func testRealShortWordsNumbersCodeAndEmojiRemain() {
-        for text in ["Hi.", "抬棺抗議。", "42", "C++", "你好，world.", "👍"] {
+        for text in ["謝謝", "谢谢", "Thank you.", "好", "Hi.", "抬棺抗議。", "42", "C++", "你好，world.", "👍"] {
             XCTAssertTrue(SpeechContent.hasWords(text))
             XCTAssertEqual(Policy.plan(mode: .dictation, transcript: text, polishEnabled: false), .pasteRough(text))
         }

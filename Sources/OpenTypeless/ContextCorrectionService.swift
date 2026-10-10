@@ -7,7 +7,8 @@ enum ContextCorrectionService {
     static func correct(_ text: String, settings: VocabularySettings, config: AppConfig) throws -> String {
         let entries = ContextCorrection.candidates(in: text, settings: settings)
         guard settings.contextCorrectionEnabled, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
-        let body = try ContextCorrection.draft(text: text, entries: entries, model: try CloudAccess.preferences.load().provider.model(for: .correction))
+        let provider = try CloudAccess.preferences.load().provider
+        let body = try ContextCorrection.draft(text: text, entries: entries, model: provider.model(for: .correction), timeout: provider.correctionTimeoutSeconds)
         let response = try CloudAccess.complete(body, purpose: .correction)
         guard let result = ContextCorrection.validatedApply(response: response, to: text, entries: entries) else {
             throw ContextCorrectionOutputError.rejected(response)

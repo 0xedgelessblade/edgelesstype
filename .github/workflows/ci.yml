@@ -30,5 +30,7 @@ jobs:
         run: bash Scripts/pack-app.sh
       - name: App self-check
         run: ./edgelesstype.app/Contents/MacOS/edgelesstype self-check
+      - name: Clipboard restoration (isolated pasteboard)
+        run: ./edgelesstype.app/Contents/MacOS/edgelesstype clipboard-probe
       - name: Public source and app privacy checks
         run: python3 Scripts/public-check.py --app-only

@@ -13,11 +13,12 @@ public enum CloudProvider: String, Codable, CaseIterable {
         case .xai: return purpose == .translation ? "grok-4.7" : "grok-4.3"
         case .google: return "gemini-3.8-flash"
         case .anthropic: return "claude-haiku-5-5"
-        case .openai: return "gpt-5.4-mini"
+        case .openai: return "gpt-6-luna"
         }
     }
+    public var correctionTimeoutSeconds: TimeInterval { self == .openai ? 8 : 4 }
     public var modelsDescription: String {
-        self == .xai ? "校正：Grok 4.3（不推理） · 翻譯：Grok 4.7" : "校正：\(model(for: .correction)) · 翻譯：\(model(for: .translation))"
+        "校正：\(model(for: .correction)) · 翻譯：\(model(for: .translation))"
     }
     public var keyPage: URL {
         switch self {
@@ -100,13 +101,15 @@ public enum CloudWire {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         case .openai:
             payload = ["model": model, "instructions": body.system, "input": body.user,
-                       "store": false, "max_output_tokens": 4096, "reasoning": ["effort": "none"]]
+                       "store": false, "max_output_tokens": 4096, "reasoning": ["effort": purpose == .correction ? "low" : "none"]]
             if body.jsonOutput { payload["text"] = ["format": ["type": "json_schema", "name": "corrections", "strict": true, "schema": correctionSchema]] }
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         case .anthropic:
             var output: [String: Any] = ["effort": "low"]
             if body.jsonOutput { output["format"] = ["type": "json_schema", "schema": correctionSchema] }
             payload = ["model": model, "system": body.system, "messages": [["role": "user", "content": body.user]],
+                       // Haiku 5.5 thinks adaptively by default; low effort alone is not off.
+                       "thinking": ["type": "disabled"],
                        "max_tokens": 4096, "output_config": output]
             request.setValue(key, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
@@ -119,6 +122,15 @@ public enum CloudWire {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return request
+    }
+
+    /// A provider-reported model is evidence, not a guess from the requested ID.
+    /// No response text, key, request ID, or personal information is retained here.
+    public static func reportedModel(_ data: Data, provider: CloudProvider) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = root[provider == .google ? "modelVersion" : "model"] as? String,
+              value.range(of: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$", options: .regularExpression) != nil else { return nil }
+        return value
     }
 
     public static func parse(_ data: Data, status: Int, provider: CloudProvider) throws -> String {
@@ -162,7 +174,8 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
     }
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
-    public func complete(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String) throws -> String {
+    public func complete(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String,
+                         onModel: ((String?) -> Void)? = nil) throws -> String {
         let request = try CloudWire.request(body, provider: provider, purpose: purpose, key: key)
         configuration.httpCookieStorage = nil; configuration.urlCache = nil
         let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
@@ -173,7 +186,11 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
             if let error {
                 box.value = .failure((error as? URLError)?.code == .timedOut ? CloudError.timeout : CloudError.network)
             } else if let http = response as? HTTPURLResponse, let data {
-                box.value = Result { try CloudWire.parse(data, status: http.statusCode, provider: provider) }
+                box.value = Result {
+                    let text = try CloudWire.parse(data, status: http.statusCode, provider: provider)
+                    onModel?(CloudWire.reportedModel(data, provider: provider))
+                    return text
+                }
             } else { box.value = .failure(CloudError.invalidResponse) }
             semaphore.signal()
         }

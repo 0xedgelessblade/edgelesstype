@@ -38,10 +38,12 @@
       "article": "docs/TROUBLESHOOTING.md#paste-clipboard-read-not-proof",
       "source_files": [
         "Sources/OpenTypeless/Paster.swift",
-        "Sources/OpenTypelessCore/PasteConfirmation.swift"
+        "Sources/OpenTypelessCore/PasteConfirmation.swift",
+        "Sources/OpenTypeless/ClipboardLease.swift"
       ],
       "test_files": [
-        "Tests/OpenTypelessTests/PasteConfirmationTests.swift"
+        "Tests/OpenTypelessTests/PasteConfirmationTests.swift",
+        "Sources/OpenTypeless/ClipboardProbe.swift"
       ],
       "test_names": [
         "testExistingMatchingSentenceDoesNotCountAsNewPaste"
@@ -339,6 +341,43 @@
       ],
       "limits": [
         "Provider aliases and prices can change; fixtures do not verify individual account billing."
+      ]
+    },
+    {
+      "id": "speech-nonspeech-hallucination",
+      "title_en": "Words from silence, background noise and recording cues",
+      "title_zh": "無人聲與提示音造成亂字",
+      "queries": [
+        "silence outputs thank you",
+        "no speech random words",
+        "沒說話 謝謝",
+        "Whisper hallucination",
+        "recording cue VAD"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#speech-words-from-silence-and-recording-cues",
+      "source_files": [
+        "Sources/OpenTypeless/ResidentSpeechEngine.swift",
+        "Sources/OpenTypeless/main.swift",
+        "Sources/OpenTypelessCore/Session.swift",
+        "Sources/OpenTypeless/Recorder.swift",
+        "Sources/OpenTypeless/CaptureProbe.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/OpenTypelessTests.swift",
+        "Tests/OpenTypelessTests/SpeechContentTests.swift",
+        "Scripts/test-speech-gate.py"
+      ],
+      "test_names": [
+        "testCancelledCueCannotStartMicrophoneLater",
+        "testOldCueCannotStartANewerSession",
+        "testStartCallbackCanOnlyBeConsumedOnce",
+        "testRealShortWordsNumbersCodeAndEmojiRemain"
+      ],
+      "evidence": [
+        "Local synthetic non-speech reproductions; 18 checks across Small and Turbo including local UI empty-result paths; deterministic cancellation tests."
+      ],
+      "limits": [
+        "Current native recording begins on Fn, before its cue. No echo cancellation or prefix trimming is enabled. Cue echoes and background voices may pass VAD. Noise-free output is not guaranteed; earlier delayed-capture user results do not validate this version."
       ]
     }
   ]

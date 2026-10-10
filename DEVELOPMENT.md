@@ -10,6 +10,10 @@
 4. 執行 `python3 Scripts/test-core.py`、`bash Scripts/pack-app.sh`。
 5. 用自己的金鑰在 UI「測試連線」，再實測一段中英夾雜短句與翻譯。不得把金鑰寫進程式或測試。
 
+## Claude 的預設推理設定
+
+Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thinking.type = disabled`，並保留 `output_config.effort = low`。Haiku 5.5 預設是 adaptive thinking，僅設 low 不代表關閉；官方允許在 high 或以下停用 thinking。此設定優先考量短句互動，不代表已完成真實帳戶的速度／翻譯品質比較。換模型時須重新核對該模型是否允許停用 thinking，不能直接沿用其他服務商的 `reasoning_effort` 欄位。參考 [Haiku 5.5 官方說明](https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5)。
+
 ## 加入另一家或自己的 LLM API
 
 - `CloudProvider`：服務商顯示名、固定 endpoint、模型與金鑰入口。
@@ -33,7 +37,7 @@
 ## 官方介面依據
 
 - [OpenAI Responses](https://developers.openai.com/api/reference/python/resources/responses/methods/create)
-- [GPT-5.4 Mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini)
+- [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
 - [Google GenerateContent](https://ai.google.dev/api/generate-content)
 - [Claude Messages](https://platform.claude.com/docs/en/api/messages/create)
 - [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview)

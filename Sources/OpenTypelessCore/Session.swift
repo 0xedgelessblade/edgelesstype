@@ -55,3 +55,22 @@ public enum Hotkey {
         }
     }
 }
+
+/// A delayed permission/readiness callback must never open a microphone or play
+/// a cue after cancel/stop or a later session. Owned on the main queue.
+public struct PendingRecordingStart {
+    private var pending: UUID?
+    public init() {}
+    public mutating func schedule() -> UUID {
+        let token = UUID()
+        pending = token
+        return token
+    }
+    public func contains(_ token: UUID) -> Bool { pending == token }
+    public mutating func cancel() { pending = nil }
+    public mutating func consume(_ token: UUID) -> Bool {
+        guard pending == token else { return false }
+        pending = nil
+        return true
+    }
+}

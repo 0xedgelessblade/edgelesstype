@@ -27,6 +27,7 @@
     "serverPath": "Engine/whisper-server",
     "smallModelPath": "Models/ggml-small.bin",
     "turboModelPath": "Models/ggml-large-v3-turbo.bin",
-    "selectedModel": "turbo"
+    "selectedModel": "turbo",
+    "vadModelPath": "Models/ggml-silero-v5.1.2.bin"
   }
 }

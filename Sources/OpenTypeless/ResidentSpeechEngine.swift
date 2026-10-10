@@ -1,4 +1,5 @@
 import Foundation
+import OpenTypelessCore
 import Darwin
 
 struct ResidentSpeechConfig: Codable {
@@ -6,15 +7,18 @@ struct ResidentSpeechConfig: Codable {
     var smallModelPath: String
     var turboModelPath: String
     var selectedModel: String
+    var vadModelPath: String? = nil
+    var resolvedVADModelPath: String { AppPaths.resolve(vadModelPath ?? SpeechContent.vadModelRelativePath) }
 
     var modelPath: String { AppPaths.resolve(selectedModel == "small" ? smallModelPath : turboModelPath) }
     var displayName: String { selectedModel == "small" ? "Small" : "Large-v3 Turbo" }
 }
 
 enum SpeechEngineError: LocalizedError {
-    case unavailable, missingGPU, invalidResponse, stopped
+    case unavailable, missingGPU, invalidResponse, stopped, missingSpeechDetector
     var errorDescription: String? {
         switch self {
+        case .missingSpeechDetector: return "缺少本機人聲偵測模型，請重新執行安裝步驟更新模型。"
         case .unavailable: return "本機辨識服務未能啟動。"
         case .missingGPU: return "未確認 Metal GPU 已啟用。"
         case .invalidResponse: return "本機辨識服務沒有回傳有效文字。"
@@ -77,6 +81,9 @@ final class ResidentSpeechEngine {
         field("no_timestamps", "true")
         field("response_format", "json")
         field("temperature", "0.0")
+        field("vad", "true")
+        field("vad_min_speech_duration_ms", "100")
+        field("vad_speech_pad_ms", "120")
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"utterance.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
         body.append(try Data(contentsOf: url))
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
@@ -111,7 +118,10 @@ final class ResidentSpeechEngine {
 
     private func ensureReady(config: AppConfig) throws {
         guard let resident = config.residentSpeech else { throw SpeechEngineError.unavailable }
-        let key = resident.serverPath + "|" + resident.modelPath + "|" + String(config.threads)
+        guard FileManager.default.fileExists(atPath: resident.resolvedVADModelPath) else {
+            throw SpeechEngineError.missingSpeechDetector
+        }
+        let key = resident.serverPath + "|" + resident.modelPath + "|" + resident.resolvedVADModelPath + "|" + String(config.threads)
         stateLock.lock()
         let reusable = worker?.isRunning == true && modelKey == key && metalSeen && ready
         stateLock.unlock()
@@ -124,7 +134,9 @@ final class ResidentSpeechEngine {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: AppPaths.resolve(resident.serverPath))
         process.arguments = ["-m", resident.modelPath, "-t", String(config.threads), "-l", config.language,
-                             "-nt", "-nc", "--host", "127.0.0.1", "--port", String(newPort)]
+                             "-nt", "-nc", "-p", "1", "--host", "127.0.0.1", "--port", String(newPort),
+                             "--vad", "--vad-model", resident.resolvedVADModelPath,
+                             "--vad-min-speech-duration-ms", "100", "--vad-speech-pad-ms", "120"]
         var environment = ProcessInfo.processInfo.environment
         environment["OPEN_TYPELESS_SESSION_TOKEN"] = token
         environment["OPEN_TYPELESS_PARENT_PID"] = String(getpid())

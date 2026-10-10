@@ -24,7 +24,7 @@ final class CloudProviderTests: XCTestCase {
 
     func testStructuredCorrectionAndPlainTranslationPayloads() throws {
         for provider in CloudProvider.allCases {
-            let correction = try ContextCorrection.draft(text: "人定聖天", entries: [], model: "ignored")
+            let correction = try ContextCorrection.draft(text: "人定聖天", entries: [], model: "ignored", timeout: provider.correctionTimeoutSeconds)
             let c = try CloudWire.request(correction, provider: provider, purpose: .correction, key: "fixture")
             let t = try CloudWire.request(ChatDraft.translate(text: "你好"), provider: provider, purpose: .translation, key: "fixture")
             let cj = try JSONSerialization.jsonObject(with: c.httpBody!) as! [String: Any]
@@ -36,10 +36,24 @@ final class CloudProviderTests: XCTestCase {
                 XCTAssertEqual(tj["reasoning_effort"] as? String, "high")
                 XCTAssertNotNil(cj["response_format"]); XCTAssertNil(tj["response_format"])
             } else if provider == .openai {
+                XCTAssertEqual(cj["model"] as? String, "gpt-6-luna")
+                XCTAssertEqual(tj["model"] as? String, "gpt-6-luna")
+                XCTAssertEqual((cj["reasoning"] as? [String: Any])?["effort"] as? String, "low")
+                XCTAssertEqual((tj["reasoning"] as? [String: Any])?["effort"] as? String, "none")
+                XCTAssertEqual(c.timeoutInterval, 8)
                 XCTAssertEqual(cj["store"] as? Bool, false)
                 XCTAssertNotNil(cj["text"]); XCTAssertNil(tj["text"])
                 XCTAssertNil(cj["temperature"])
             } else if provider == .anthropic {
+                // Both tasks must disable thinking, including translation drafts
+                // that carry a high reasoning hint for other providers.
+                for request in [cj, tj] {
+                    XCTAssertEqual(request["model"] as? String, "claude-haiku-5-5")
+                    XCTAssertEqual((request["thinking"] as? [String: Any])?["type"] as? String, "disabled")
+                    XCTAssertEqual((request["output_config"] as? [String: Any])?["effort"] as? String, "low")
+                    XCTAssertNil(request["reasoning_effort"])
+                    XCTAssertNil(request["temperature"])
+                }
                 XCTAssertNotNil((cj["output_config"] as? [String: Any])?["format"])
                 XCTAssertNil((tj["output_config"] as? [String: Any])?["format"])
                 XCTAssertNil(cj["temperature"])

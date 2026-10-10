@@ -80,7 +80,7 @@ mkdir -p .build/install-logs
 bash Scripts/bootstrap.sh > .build/install-logs/bootstrap.log 2>&1
 ```
 
-Check the exit status before continuing. The bootstrap script builds the pinned whisper.cpp revision, applies the local worker patch, verifies the two model checksums, and creates `Config/app.json` only if it does not exist. Do not print an existing configuration or remove it to force a clean setup.
+Check the exit status before continuing. The bootstrap script builds the pinned whisper.cpp revision, applies the local worker patch, verifies the two recognition models and the small Silero speech-detector checksum, and creates `Config/app.json` only if it does not exist. Do not print an existing configuration or remove it to force a clean setup.
 
 After bootstrap succeeds:
 
@@ -118,7 +118,7 @@ Wait for the app to show that the selected local model is ready. If an existing 
 
 Ask the user to place the cursor in a disposable, empty text editor and perform this short test:
 
-1. Tap Fn briefly to start recording.
+1. Tap Fn briefly; start speaking as soon as you hear the start cue. The microphone is already capturing when the cue plays.
 2. Say a non-private test sentence, for example: "這是一句測試，請幫我 check the settings。"
 3. Tap Fn again to stop. Confirm the text appears once and the result panel closes.
 4. If automatic insertion does not occur, use the documented manual paste path and investigate. Never press Enter or send a message as a test.

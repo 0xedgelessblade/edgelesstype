@@ -13,3 +13,5 @@ API 金鑰使用 AES-256-GCM 保存於 `private/store.encrypted.json`。本機�
 每位使用者各自在自己的 Mac 建立金鑰表和密文檔；這些舊命名路徑不是 Codex 雲端，也不是 macOS Keychain。本專案沒有收集使用者 API 金鑰的後台。呼叫 API 時，金鑰會作為認證傳送給使用者選定的服務商。
 
 此設計防範分享專案時連帶洩漏，並非對抗已控制同一使用者帳戶的程式：若同時取得密文及本機解密鑰匙，便可能讀出 API 金鑰。App「刪除金鑰」只移除本機紀錄；撤銷 API 權限須到服務商操作。
+
+Clipboard restoration keeps a bounded, temporary copy of prior pasteboard items in memory only. It is not written to disk or sent to an API. The copy is released when an offer succeeds or is cancelled. Restoration requires confirmed insertion and unchanged pasteboard ownership; large or incomplete snapshots are not restored.

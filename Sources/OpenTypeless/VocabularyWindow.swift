@@ -202,7 +202,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         先點進要輸入的文字框，把游標放好。
 
         一般輸入
-        短按 Fn 開始；說完再短按 Fn，文字會自動貼入。
+        短按 Fn，聽到提示音即可開始說話；說完再短按 Fn，文字會自動貼入。
 
         中翻英
         按住 Shift，再短按 Fn 開始，隨即放開 Shift。說完只短按 Fn 結束，會貼入英文。

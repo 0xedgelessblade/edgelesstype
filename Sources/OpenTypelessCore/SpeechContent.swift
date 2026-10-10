@@ -1,6 +1,8 @@
 import Foundation
 
 public enum SpeechContent {
+    public static let vadModelRelativePath = "Models/ggml-silero-v5.1.2.bin"
+
     /// A bare full stop, whitespace, or invisible formatting is not dictation.
     /// Keep numbers, code with letters, mixed languages, and actual emoji.
     public static func hasWords(_ text: String) -> Bool {

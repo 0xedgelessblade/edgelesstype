@@ -2,6 +2,31 @@ import XCTest
 @testable import OpenTypelessCore
 
 final class OpenTypelessTests: XCTestCase {
+    func testCancelledCueCannotStartMicrophoneLater() {
+        var pending = PendingRecordingStart()
+        let token = pending.schedule()
+        XCTAssertTrue(pending.contains(token))
+        pending.cancel()
+        XCTAssertFalse(pending.contains(token))
+        XCTAssertFalse(pending.consume(token))
+    }
+    func testOldCueCannotStartANewerSession() {
+        var pending = PendingRecordingStart()
+        let old = pending.schedule()
+        let current = pending.schedule()
+        XCTAssertFalse(pending.contains(old))
+        XCTAssertTrue(pending.contains(current))
+        XCTAssertFalse(pending.consume(old))
+        XCTAssertTrue(pending.consume(current))
+    }
+    func testStartCallbackCanOnlyBeConsumedOnce() {
+        var pending = PendingRecordingStart()
+        let token = pending.schedule()
+        XCTAssertTrue(pending.contains(token))
+        XCTAssertTrue(pending.consume(token))
+        XCTAssertFalse(pending.contains(token))
+        XCTAssertFalse(pending.consume(token))
+    }
     func testFnTapStartsAndStopsDictation() {
         XCTAssertEqual(Hotkey.decide(session: .idle, tap: .fn), .startDictation)
         XCTAssertEqual(Hotkey.decide(session: .dictation, tap: .fn), .stopDictation)

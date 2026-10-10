@@ -2,6 +2,8 @@
 #error("edgelesstype supports only Apple silicon M-series Macs.")
 #endif
 import AppKit
+import AVFoundation
+import Darwin
 import Foundation
 import OpenTypelessCore
 
@@ -169,6 +171,8 @@ struct Transcriber {
             return try ResidentSpeechEngine.shared.transcribe(url: url, config: config,
                 prompt: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms))
         }
+        let vadModel = AppPaths.resolve(SpeechContent.vadModelRelativePath)
+        guard FileManager.default.fileExists(atPath: vadModel) else { throw SpeechEngineError.missingSpeechDetector }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: AppPaths.resolve(config.whisperCLI))
         process.arguments = [
@@ -176,7 +180,8 @@ struct Transcriber {
             "-f", url.path,
             "-l", config.language,
             "-t", String(config.threads),
-            "-nt", "-np",
+            "-nt", "-np", "--vad", "--vad-model", vadModel,
+            "--vad-min-speech-duration-ms", "100", "--vad-speech-pad-ms", "120",
             "--prompt", Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms)
         ]
         let out = Pipe()
@@ -188,69 +193,6 @@ struct Transcriber {
         guard process.terminationStatus == 0 else { throw SpeechEngineError.invalidResponse }
         return String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-}
-
-final class Recorder {
-    let config: AppConfig
-    private var process: Process?
-    private var fileURL: URL?
-
-    init(config: AppConfig) {
-        self.config = config
-    }
-
-    func start() throws -> URL {
-        let url = URL(fileURLWithPath: "/private/tmp/open-typeless-\(UUID().uuidString).wav")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: AppPaths.resolve(config.ffmpegPath))
-        process.arguments = [
-            "-hide_banner", "-loglevel", "error",
-            "-f", "avfoundation",
-            "-i", Self.microphone(fallback: config.audioDevice, ffmpeg: AppPaths.resolve(config.ffmpegPath)),
-            "-ac", "1",
-            "-ar", "16000",
-            "-acodec", "pcm_s16le",
-            "-y", url.path
-        ]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        try process.run()
-        self.process = process
-        self.fileURL = url
-        return url
-    }
-
-    private static func microphone(fallback: String, ffmpeg: String) -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ffmpeg)
-        process.arguments = ["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
-        let err = Pipe()
-        process.standardOutput = Pipe()
-        process.standardError = err
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return fallback
-        }
-        let listing = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return AudioInput.pick(from: listing, fallback: fallback)
-    }
-
-    func stop() -> URL? {
-        guard let process, let fileURL else { return nil }
-        process.interrupt()
-        let deadline = Date().addingTimeInterval(3)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        if process.isRunning {
-            process.terminate()
-        }
-        self.process = nil
-        self.fileURL = nil
-        return fileURL
     }
 }
 
@@ -355,6 +297,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let paster = Paster()
     private lazy var soundPlayer = SoundPlayer(store: AppPaths.soundSettingsStore)
     private var recordingSoundPreset: SoundPreset?
+    private var pendingRecordingStart = PendingRecordingStart()
     private var soundEditor: SoundSettingsWindow?
     private var monitor: HotkeyMonitor?
     private var recorder: Recorder?
@@ -555,13 +498,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             } catch {
                 DispatchQueue.main.async {
                     self.status.button?.title = "模型未就緒"
-                    self.vocabularyEditor?.setModelStatus("模型載入失敗，可從語音選單切換 Small 後重試。")
+                    self.vocabularyEditor?.setModelStatus((error as? SpeechEngineError)?.errorDescription ?? "模型載入失敗，可從語音選單切換 Small 後重試。")
                 }
             }
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        pendingRecordingStart.cancel()
         soundPlayer.cancelPreview()
         ResidentSpeechEngine.shared.shutdown()
         cleanup(recorder?.stop())
@@ -681,23 +625,53 @@ final class AppController: NSObject, NSApplicationDelegate {
         // vocabulary file must not turn on cloud processing or be overwritten.
         recordingVocabulary = (try? AppPaths.vocabularyStore.load(fallbackTerms: config.terms))
             ?? VocabularySettings(entries: config.terms.map { VocabularyEntry(word: $0) })
-        let recorder = Recorder(config: config)
-        do {
-            recordingURL = try recorder.start()
+        // Capture the destination at the Fn gesture, before any asynchronous cue.
+        targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        session = mode
+        startedAt = nil
+        soundPlayer.cancelPreview()
+        recordingSoundPreset = soundPlayer.preset
+        let token = pendingRecordingStart.schedule()
+        panel.showMessage("正在開啟麥克風…")
+        status.button?.title = "準備錄音"
+        let launch = { [weak self] in
+            guard let self, self.pendingRecordingStart.contains(token), self.session == mode else { return }
+            let recorder = Recorder()
             self.recorder = recorder
-            targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            session = mode
-            startedAt = Date()
-            status.button?.title = mode == .dictation ? "聽寫" : "翻譯"
-            recordingSoundPreset = soundPlayer.preset
-            soundPlayer.play(.start, preset: recordingSoundPreset)
-            panel.showRecording()
-        } catch {
-            panel.showMessage("麥克風沒有開始。請在系統設定允許這支程式使用麥克風。")
+            let fail = { [weak self, weak recorder] in
+                guard let self, let recorder, self.recorder === recorder else { return }
+                self.cancel()
+                self.panel.showMessage("錄音中斷或麥克風未就緒，請檢查麥克風權限與輸入裝置，再按 Fn 重試。")
+            }
+            do {
+                self.recordingURL = try recorder.start(cueURL: self.soundPlayer.cueURL(.start, preset: self.recordingSoundPreset), onReady: { [weak self, weak recorder] in
+                    guard let self, let recorder, self.recorder === recorder,
+                          self.pendingRecordingStart.consume(token), self.session == mode else { return false }
+                    self.startedAt = Date()
+                    self.status.button?.title = mode == .translation ? "翻譯" : "聽寫"
+                    self.panel.showRecording()
+                    return true
+                }, onFailure: fail)
+            } catch { fail() }
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: launch()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] allowed in
+                DispatchQueue.main.async {
+                    guard let self, self.pendingRecordingStart.contains(token), self.session == mode else { return }
+                    if allowed { launch() }
+                    else { self.cancel(); self.panel.showMessage("請在系統設定允許 edgelesstype 使用麥克風。") }
+                }
+            }
+        default:
+            cancel()
+            panel.showMessage("請在系統設定允許 edgelesstype 使用麥克風。")
         }
     }
 
     private func cancel() {
+        pendingRecordingStart.cancel()
         recordingSoundPreset = nil
         soundPlayer.cancelPreview()
         pendingTiming = nil
@@ -718,14 +692,17 @@ final class AppController: NSObject, NSApplicationDelegate {
             mode: mode == .translation ? "translation" : "dictation",
             model: config?.residentSpeech?.displayName ?? "Small CPU")
         session = .idle
-        soundPlayer.play(.stop, preset: recordingSoundPreset)
-        recordingSoundPreset = nil
+        pendingRecordingStart.cancel()
+        soundPlayer.cancelPreview()
         busy = true
         let url = recorder?.stop()
         recorder = nil
-        let tooShort = startedAt.map { Date().timeIntervalSince($0) < 0.25 } ?? true
+        // Close native microphone capture before playing the completion cue.
+        soundPlayer.play(.stop, preset: recordingSoundPreset)
+        recordingSoundPreset = nil
+        let neverReady = startedAt == nil
         startedAt = nil
-        guard let url, !tooShort else {
+        guard let url, !neverReady else {
             cleanup(url)
             busy = false
             status.button?.title = "edgelesstype"
@@ -741,12 +718,19 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    // Explicit development probe: accepts only silent PCM and copies the input.
-    func runSilenceProbe(source: URL) -> Int32 {
-        guard let audio = try? Data(contentsOf: source), SpeechContent.isDigitalSilence(audio) == true,
+    // Explicit development probe: synthetic PCM only; cloud access is blocked.
+    func runSilenceProbe(source: URL, requireDigitalSilence: Bool = true) -> Int32 {
+        guard let audio = try? Data(contentsOf: source), SpeechContent.isDigitalSilence(audio) != nil,
+              (!requireDigitalSilence || SpeechContent.isDigitalSilence(audio) == true),
               let loaded = try? AppPaths.loadConfig() else { print("silent-fixture-required"); return 2 }
         config = loaded
+        CloudAccess.offlineProbe = true
         recordingVocabulary = VocabularySettings(contextCorrectionEnabled: true)
+        if !requireDigitalSilence {
+            guard let config, (try? Transcriber(config: config).transcribe(url: source)) == "" else {
+                print("non-speech-fixture-rejected-before-paste"); return 1
+            }
+        }
         let boardCount = NSPasteboard.general.changeCount
         for mode: Session in [.dictation, .translation] {
             let temp = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-silence-" + UUID().uuidString + ".wav")
@@ -761,8 +745,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
         for punctuation in [".", "。", "…", " "] { paster.offer(punctuation, into: nil) }
-        let ok = !paster.isOffering && NSPasteboard.general.changeCount == boardCount
-        print("silentPanelHidden=true clipboardUnchanged=\(ok) punctuationNotOffered=\(!paster.isOffering)")
+        let ok = !paster.isOffering && NSPasteboard.general.changeCount == boardCount && CloudAccess.offlineProbeRequests == 0
+        print("silentPanelHidden=true clipboardUnchanged=\(ok) punctuationNotOffered=\(!paster.isOffering) cloudRequests=\(CloudAccess.offlineProbeRequests)")
         return ok ? 0 : 1
     }
 
@@ -781,7 +765,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         do {
             transcript = try Transcriber(config: config, vocabulary: recordingVocabulary).transcribe(url: url)
         } catch {
-            DispatchQueue.main.async { self.panel.showMessage("轉寫失敗，沒有貼上") }
+            DispatchQueue.main.async { self.panel.showMessage((error as? SpeechEngineError)?.errorDescription ?? "轉寫失敗，沒有貼上") }
             return
         }
         timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
@@ -890,13 +874,37 @@ if args.first == "speech-benchmark" { exit(SpeechBenchmark.run(arguments: args))
 if args.first == "correction-probe" { exit(ContextCorrectionService.probe(onlyProtest: args.contains("--protest"), onlyPunctuation: args.contains("--punctuation"))) }
 if args.first == "focus-probe", args.count >= 2 { exit(MuseFocusProbe.run(args[1], activate: args.dropFirst(2).contains("--activate"), summary: args.dropFirst(2).contains("--summary"))) }
 let app = NSApplication.shared
+if args.first == "clipboard-probe" { exit(ClipboardProbe.run()) }
+if args.first == "recording-ready-probe" {
+    app.setActivationPolicy(.accessory)
+    for preset in SoundPreset.allCases {
+        guard CaptureProbe.cueOnly(preset: preset, checkRecognition: false) == 0 else { exit(1) }
+    }
+    print("recording-ready-probe-passed=true")
+    exit(0)
+}
+if args.first == "capture-fixture", args.count == 3 {
+    exit(CaptureProbe.convert(input: URL(fileURLWithPath: args[1]), output: URL(fileURLWithPath: args[2])))
+}
+if args.first == "cue-cycle-probe", args.count == 1 {
+    app.setActivationPolicy(.accessory)
+    for preset in SoundPreset.allCases {
+        guard CaptureProbe.cueOnly(preset: preset) == 0 else { exit(1) }
+    }
+    print("cue-cycle-probe-passed=true")
+    exit(0)
+}
+if args.first == "cue-probe", args.count == 2, let preset = SoundPreset(rawValue: args[1]) {
+    app.setActivationPolicy(.accessory)
+    exit(CaptureProbe.cueOnly(preset: preset))
+}
 if args.first == "paste-timing-probe" { exit(PasteTimingProbe.run(arguments: args)) }
 if args.first == "paste-probe" {
     exit(PasteProbe.run(arguments: args))
 }
-if args.first == "silence-probe", args.count == 2 {
+if ["silence-probe", "no-speech-probe"].contains(args.first ?? ""), args.count == 2 {
     app.setActivationPolicy(.accessory)
-    exit(AppController().runSilenceProbe(source: URL(fileURLWithPath: args[1])))
+    exit(AppController().runSilenceProbe(source: URL(fileURLWithPath: args[1]), requireDigitalSilence: args.first == "silence-probe"))
 }
 if args.first == "dictionary-preview" {
     // Isolated visual QA: no personal dictionary, key table or microphone.

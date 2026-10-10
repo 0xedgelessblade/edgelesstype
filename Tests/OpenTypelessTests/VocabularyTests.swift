@@ -121,4 +121,20 @@ final class VocabularyTests: XCTestCase {
         let entries = payload["vocabulary"] as! [[String: Any]]
         XCTAssertEqual(Set(entries[0].keys), Set(["word"]))
     }
+    func testPunctuationNamesKeepRepeatedWordsAndBeanReferences() {
+        let original = "豆點你為什麼會變成是豆豆的豆?應該是豆點句點"
+        let response = #"{"corrections":[{"from":"豆點","to":"逗點","occurrence":1},{"from":"豆點","to":"逗點","occurrence":2}],"punctuated":"逗點，你為什麼會變成是豆豆的豆?應該是逗點、句點。"}"#
+        XCTAssertEqual(ContextCorrection.validatedApply(response: response, to: original, entries: []),
+                       "逗點，你為什麼會變成是豆豆的豆?應該是逗點、句點。")
+    }
+
+    func testPunctuationFieldCannotSilentlySubstituteWordsOrSymbols() {
+        let original = "這裡應該用豆點，不是句點。"
+        // A model must declare word changes instead of hiding them in punctuation.
+        let undeclared = #"{"corrections":[],"punctuated":"這裡應該用逗點，不是句點。"}"#
+        XCTAssertEqual(ContextCorrection.validatedApply(response: undeclared, to: original, entries: []), original)
+        let symbol = #"{"corrections":[{"from":"豆點","to":"，","occurrence":1}],"punctuated":null}"#
+        XCTAssertNil(ContextCorrection.validatedApply(response: symbol, to: original, entries: []))
+    }
+
 }

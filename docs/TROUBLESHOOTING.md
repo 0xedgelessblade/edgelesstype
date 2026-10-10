@@ -18,7 +18,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **判斷：** 讀取剪貼簿與完成插入是兩件事。目標或其他程序可能先查看剪貼簿；這不足以證明游標處收到文字。
 
-**本專案解法：** 先實際發布字串，不依賴延遲供應；以目標快照確認插入。記錄 `changeCount` 用來避免接管使用者後來複製的內容，不把它當成功訊號。取消或成功後不自動恢復舊剪貼簿。
+**本專案解法：** 先實際發布字串，不依賴延遲供應；以目標快照確認插入。記錄 `changeCount` 用來避免接管使用者後來複製的內容，不把它當成功訊號。目標文字讀回確認貼入後才還原舊剪貼簿；取消或未確認則保留語音文字。還原前再次檢查 changeCount，使用者後來複製的內容不覆蓋。備份僅在記憶體，保留多個項目與格式；超過 64 MiB、無法取得完整資料或快照期間被改變時，不作不完整還原。
 
 **程式與驗證：** [Paster](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation](../Sources/OpenTypelessCore/PasteConfirmation.swift)。輸入框原文未改變時不得收起提示框。這項原則本身不會解決失焦或不相容的按鍵投遞。
 
@@ -86,7 +86,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **程式與驗證：** [SpeechContent](../Sources/OpenTypelessCore/SpeechContent.swift)、[SpeechContentTests](../Tests/OpenTypelessTests/SpeechContentTests.swift)。`silence-probe <silent-pcm16.wav>` 會複製輸入，驗證兩種模式的提示框及剪貼簿版本號，不讀剪貼簿原文。
 
-**限制：** 數位靜音判斷不是完整 VAD；它不能宣稱能排除所有背景噪音造成的有字幻覺。
+**限制：** 數位靜音判斷不是完整 VAD；背景噪音與提示音造成的有字幻覺，另由下方的人聲偵測與錄音時序處理。
 
 ## Speech: homophone errors
 
@@ -155,3 +155,29 @@ API schema 參考：[OpenAI structured outputs](https://developers.openai.com/ap
 **限制：** 價格與服務端映射會再改變；舊實測不能保證當前帳單。開發用的付費回歸呼叫應與正常使用量分開評估，不記錄或公開使用者帳單。
 
 依據：[官方遷移公告](https://docs.x.ai/developers/migration/may-15-retirement)、[官方價格](https://docs.x.ai/developers/pricing)。
+
+## Speech: words from silence and recording cues
+
+**症狀 / search terms：** silence outputs thank you、Whisper hallucination、沒說話卻出現謝謝、random words from noise、recording cue captured by microphone。
+
+**已找到的原因：** 數位靜音 guard 只接受幅度幾乎為零的 PCM；真實麥克風的底噪可通過這個檢查，原本沒有獨立人聲偵測。舊流程先開始錄音再播開始音、先播結束音才停錄，喇叭提示音也可能被收進去。對合成底噪與提示音的本機測試，未呼叫任何雲端 API 就能重現亂字。即使加上 VAD，部分提示音仍被誤判成語音，Whisper 的 no-speech 分數也不能可靠救回這些案例。
+
+**本專案解法：** 使用固定版本、校驗碼驗證的 Silero v5.1.2，在本機辨識前偵測人聲。常駐 worker 與 legacy CLI 皆啟用 VAD；缺少模型時回報錯誤，不偷偷跳過。worker 明確使用單一 processor context，讓 upstream 在無人聲時清除前次結果。原生 AVAudioEngine 在 Fn 觸發時直接開啟系統目前的輸入裝置；第一個音訊緩衝已寫入暫存 WAV 後播放開始音，不等提示音結束，也不裁切或靜音開頭。停止時先關閉麥克風再播結束音。權限與就緒回呼帶可取消 token，過期回呼不會重新開麥克風或播提示音。本版不啟用回音消除，開始音可能被收錄；此取捨優先避免等待提示音導致的漏字，並不保證任何環境都沒有幻覺。
+
+**程式與驗證：** [ResidentSpeechEngine](../Sources/OpenTypeless/ResidentSpeechEngine.swift)、[錄音生命週期](../Sources/OpenTypeless/main.swift)、[PendingRecordingStart](../Sources/OpenTypelessCore/Session.swift)、[取消回歸測試](../Tests/OpenTypelessTests/OpenTypelessTests.swift)。[本機合成音訊測試](../Scripts/test-speech-gate.py) 可在安裝模型後執行 `python3 Scripts/test-speech-gate.py --ui`；不使用麥克風或私人設定、不輸出轉寫、不呼叫雲端。先前版本 Small／Turbo 共 18 項通過，包括空白、底噪、風扇聲、敲擊聲、真正說「謝謝」「好」、混合語句、小聲語句，以及兩種輸入模式下的提示框、剪貼簿與零雲端請求檢查。Core 另驗證取消、過期與重複開始回呼。
+
+新增原生錄音路徑測試會檢查 16／44.1／48 kHz 開頭與末尾取樣，再用同一串流轉換程式檢查語音與無人聲。`--speaker` 為另外明確啟用的實體麥克風／喇叭測試：請保持安靜，各提示音錄三秒，只回報成功與否，不輸出文字，錄音完成檢查即刪除；不使用此旗標不會開麥克風。需要已授權麥克風的本機簽署 App 時，以 `--app /path/to/edgelesstype.app` 指定。
+
+**限制：** 合成測試不代表所有房間、回音、噪音或低音量人聲均已覆蓋；VAD 也不是說話者身分辨識，旁人或電視的真實人聲可能通過。不要把「謝謝」等合理用語加入文字黑名單。先前延後收音版本曾由使用者確認空白與「謝謝」兩項；這不算新原生錄音版本的真人驗證。實驗性的回音消除流程在連續無人聲測試仍出現有效文字，已停止採用。本版保留立即收音與人聲偵測，其他裝置和房間仍需人工驗證。
+
+**參考：** [Apple voice processing 與回音消除](https://developer.apple.com/videos/play/wwdc2023/10235/)、[Whisper 模型限制](https://github.com/openai/whisper/blob/main/model-card.md)、[whisper.cpp v1.8.1 VAD](https://github.com/ggml-org/whisper.cpp/tree/v1.8.1#voice-activity-detection-vad)。
+
+## Clipboard restoration
+
+`clipboard-probe` uses an isolated named pasteboard. It checks confirmed restoration, unconfirmed/manual fallback, cancellation, empty clipboards, multiple items/formats, a newer user copy, and successive offers. It never reads the system clipboard.
+
+The automatic and manual paste paths share the same destination readback. Only confirmed insertion calls `ClipboardLease.finish(confirmed: true)`. Clipboard reads, elapsed time, or an AX setter returning success are not confirmation. The old clipboard is held only in memory and discarded when the offer ends.
+
+## Recording readiness
+
+`recording-ready-probe` explicitly opens the microphone for three short cycles. Each cue follows the first saved audio buffer. It checks repeated capture/stop without ASR or cloud calls, then deletes the files. It does not test recognition accuracy or noise rejection. The opt-in `cue-cycle-probe` remains a diagnostic for cue hallucinations and is not a promised passing test in this release.

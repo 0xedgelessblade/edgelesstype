@@ -89,6 +89,9 @@ def main():
     shutil.copy2(original['residentSpeech']['serverPath'], dest / 'Engine/whisper-server')
     shutil.copy2(original['residentSpeech']['turboModelPath'], dest / 'Models/ggml-large-v3-turbo.bin')
     shutil.copy2(original['residentSpeech']['smallModelPath'], dest / 'Models/ggml-small.bin')
+    vad_name = 'ggml-silero-v5.1.2.bin'
+    shutil.copy2(root / original['residentSpeech'].get('vadModelPath', 'Models/' + vad_name), dest / 'Models' / vad_name)
+    config['residentSpeech']['vadModelPath'] = 'Models/' + vad_name
     count = copy_recorder(original['ffmpegPath'], dest / 'Engine', dest / 'Licenses')
     # The portable edition always uses the resident engine for both models.
     config['whisperCLI'] = ''

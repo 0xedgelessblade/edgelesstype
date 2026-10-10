@@ -37,8 +37,9 @@ cp .build/speech/bin/whisper-server Engine/whisper-server
 codesign --force --sign - Engine/whisper-server
 fetch_model() {
   local name="$1" expected="$2" target="Models/$1"
+  local base_url="${3:-https://huggingface.co/ggerganov/whisper.cpp/resolve/main}"
   if [[ -f "$target" ]] && [[ "$(shasum -a 256 "$target" | cut -d' ' -f1)" == "$expected" ]]; then return; fi
-  curl -fL --retry 3 "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$name" -o "$target.part"
+  curl -fL --retry 3 "$base_url/$name" -o "$target.part"
   if [[ "$(shasum -a 256 "$target.part" | cut -d' ' -f1)" != "$expected" ]]; then
     echo "Checksum mismatch: $name" >&2; exit 1
   fi
@@ -46,6 +47,7 @@ fetch_model() {
 }
 fetch_model ggml-small.bin 1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b
 fetch_model ggml-large-v3-turbo.bin 1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69
+fetch_model ggml-silero-v5.1.2.bin 29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf https://huggingface.co/ggml-org/whisper-vad/resolve/main
 if [[ ! -f Config/app.json ]]; then
   python3 - <<'PY'
 import json, shutil
