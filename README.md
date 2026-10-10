@@ -74,10 +74,12 @@ open edgelesstype.app
 
 | 服務商 | 預設校正／翻譯模型 | 金鑰入口 |
 |---|---|---|
-| xAI | 校正 `grok-4-1-fast-non-reasoning`；翻譯 `grok-4.7` | [xAI Console](https://console.x.ai/) |
+| xAI | 校正 `grok-4.3`；翻譯 `grok-4.7` | [xAI Console](https://console.x.ai/) |
 | Google | `gemini-3.8-flash` | [Google AI Studio](https://aistudio.google.com/api-keys) |
 | Claude | `claude-haiku-5-5` | [Claude Platform](https://platform.claude.com/settings/keys) |
 | OpenAI | `gpt-5.4-mini` | [OpenAI Platform](https://platform.openai.com/api-keys) |
+
+xAI 已於 2026-05-15 將舊的 Grok 4.1 Fast API 名稱轉向 Grok 4.3 並按新模型計費。本專案直接指定 `grok-4.3`、校正使用 `reasoning_effort: none`，避免舊名稱與實際費率不一致。詳見 [官方遷移說明](https://docs.x.ai/developers/migration/may-15-retirement)。
 
 目前 xAI 的校正與翻譯使用不同預設模型；其他三家暫用同一模型處理兩項任務，尚未完成各自的分工選型比較。程式支援分別指定兩種用途。
 

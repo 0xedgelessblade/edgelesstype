@@ -10,14 +10,14 @@ public enum CloudProvider: String, Codable, CaseIterable {
     }
     public func model(for purpose: CloudPurpose) -> String {
         switch self {
-        case .xai: return purpose == .translation ? "grok-4.7" : "grok-4-1-fast-non-reasoning"
+        case .xai: return purpose == .translation ? "grok-4.7" : "grok-4.3"
         case .google: return "gemini-3.8-flash"
         case .anthropic: return "claude-haiku-5-5"
         case .openai: return "gpt-5.4-mini"
         }
     }
     public var modelsDescription: String {
-        self == .xai ? "校正：Grok 4.1 Fast · 翻譯：Grok 4.7" : "校正：\(model(for: .correction)) · 翻譯：\(model(for: .translation))"
+        self == .xai ? "校正：Grok 4.3（不推理） · 翻譯：Grok 4.7" : "校正：\(model(for: .correction)) · 翻譯：\(model(for: .translation))"
     }
     public var keyPage: URL {
         switch self {
@@ -93,6 +93,8 @@ public enum CloudWire {
         switch provider {
         case .xai:
             var tuned = body; tuned.model = model
+            // Preserve the non-reasoning behavior of the retired correction alias.
+            if purpose == .correction { tuned.reasoningEffort = "none" }
             payload = tuned.json
             payload["max_tokens"] = 4096
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

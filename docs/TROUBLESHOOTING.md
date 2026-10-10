@@ -141,3 +141,17 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 **限制：** 補標點需啟用上下文校正與有效 API。離線、逾時或模型沒有給出合法結果時保留原轉寫；驗證器能限制改寫，不能證明語意斷句一定正確。
 
 API schema 參考：[OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)、[Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)、[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)。四家服務共用 `ContextCorrection.draft` 提示詞，只有協定轉接層依供應商分開。
+
+## API: retired model aliases
+
+**症狀 / search terms：** deprecated model alias、unexpected API cost、Grok 4.1 Fast redirect、舊模型名稱與帳單不一致。
+
+**原因：** API 接受舊名稱，不代表仍執行舊模型或沿用舊價格。xAI 官方公告，2026-05-15 後 `grok-4-1-fast-non-reasoning` 會轉向 `grok-4.3` 並使用 `none` 推理層級，按 Grok 4.3 收費。
+
+**解法：** 明確指定目前的模型 ID、推理層級，讓 UI 與請求一致。這項修改本身不會把價格降回舊費率。程式不因 API 名稱仍能呼叫，就將它視為可用性或價格未變的證據。
+
+**程式與驗證：** [CloudProvider](../Sources/OpenTypelessCore/CloudProvider.swift)、[provider tests](../Tests/OpenTypelessTests/CloudProviderTests.swift) 的 `testStructuredCorrectionAndPlainTranslationPayloads` 驗證校正指定 Grok 4.3／none、翻譯維持 Grok 4.7／high。本機 fixtures 不消耗 API 額度。
+
+**限制：** 價格與服務端映射會再改變；舊實測不能保證當前帳單。開發用的付費回歸呼叫應與正常使用量分開評估，不記錄或公開使用者帳單。
+
+依據：[官方遷移公告](https://docs.x.ai/developers/migration/may-15-retirement)、[官方價格](https://docs.x.ai/developers/pricing)。

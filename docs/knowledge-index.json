@@ -313,6 +313,33 @@
       "limits": [
         "Needs enabled cloud correction; punctuation placement is not guaranteed by character preservation."
       ]
+    },
+    {
+      "id": "api-retired-model-alias",
+      "title_en": "Retired model aliases and unexpected pricing",
+      "title_zh": "舊模型別名與費率不一致",
+      "queries": [
+        "deprecated model alias",
+        "Grok 4.1 Fast redirect",
+        "unexpected API cost",
+        "舊模型費率"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#api-retired-model-aliases",
+      "source_files": [
+        "Sources/OpenTypelessCore/CloudProvider.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/CloudProviderTests.swift"
+      ],
+      "test_names": [
+        "testStructuredCorrectionAndPlainTranslationPayloads"
+      ],
+      "evidence": [
+        "Official provider migration notice and local request-format fixtures."
+      ],
+      "limits": [
+        "Provider aliases and prices can change; fixtures do not verify individual account billing."
+      ]
     }
   ]
 }

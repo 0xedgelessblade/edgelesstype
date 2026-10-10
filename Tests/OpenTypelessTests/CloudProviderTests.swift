@@ -30,8 +30,10 @@ final class CloudProviderTests: XCTestCase {
             let cj = try JSONSerialization.jsonObject(with: c.httpBody!) as! [String: Any]
             let tj = try JSONSerialization.jsonObject(with: t.httpBody!) as! [String: Any]
             if provider == .xai {
-                XCTAssertEqual(cj["model"] as? String, "grok-4-1-fast-non-reasoning")
+                XCTAssertEqual(cj["model"] as? String, "grok-4.3")
                 XCTAssertEqual(tj["model"] as? String, "grok-4.7")
+                XCTAssertEqual(cj["reasoning_effort"] as? String, "none")
+                XCTAssertEqual(tj["reasoning_effort"] as? String, "high")
                 XCTAssertNotNil(cj["response_format"]); XCTAssertNil(tj["response_format"])
             } else if provider == .openai {
                 XCTAssertEqual(cj["store"] as? Bool, false)

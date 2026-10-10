@@ -36,7 +36,7 @@ final class OpenTypelessTests: XCTestCase {
 
     func testPolishIsFastModelWithoutReasoning() {
         let body = ChatDraft.polish(text: "嗯那個今天")
-        XCTAssertEqual(body.model, "grok-4-1-fast-non-reasoning")
+        XCTAssertEqual(body.model, "grok-4.3")
         XCTAssertNil(body.reasoningEffort)
         XCTAssertFalse(body.sendsAudio)
         XCTAssertFalse(body.json.keys.contains("audio"))

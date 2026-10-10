@@ -17,7 +17,7 @@ public enum SelfCheck {
 
         expect(Policy.plan(mode: .dictation, transcript: "今天很好。", polishEnabled: false) == .pasteRough("今天很好。"), "聽寫應該先貼粗稿")
         expect(Policy.plan(mode: .translation, transcript: "今天很好", polishEnabled: true) == .waitForEnglish(chinese: "今天很好"), "翻譯不該先貼中文")
-        expect(ChatDraft.polish(text: "嗯").model == "grok-4-1-fast-non-reasoning", "潤飾模型不對")
+        expect(ChatDraft.polish(text: "嗯").model == "grok-4.3", "潤飾模型不對")
         expect(ChatDraft.polish(text: "嗯").reasoningEffort == nil, "潤飾不該推理")
         expect(ChatDraft.translate(text: "嗯").model == "grok-4.7", "翻譯模型不對")
         expect(ChatDraft.translate(text: "嗯").reasoningEffort == "high", "翻譯應該用較慢的流暢設定")
