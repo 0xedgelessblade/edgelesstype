@@ -110,7 +110,7 @@ python3 Scripts/public-check.py
 python3 Scripts/public-check.py dist/edgelesstype-source.zip
 ```
 
-[GitHub Actions 工作流程](.github/workflows/ci.yml) 使用 macOS arm64 runner，檢查 Core、文件、App 建置與公開來源；不下載語音模型、不操作目標 App，也不需要 API 金鑰。工作流程尚待 repository 上傳後的首次 hosted run。
+[GitHub Actions 工作流程](.github/workflows/ci.yml) 使用 macOS arm64 runner，檢查 Core、文件、App 建置與公開來源；不下載語音模型、不操作目標 App，也不需要 API 金鑰。[首次 hosted run 已通過](https://github.com/0xedgelessblade/edgelesstype/actions/runs/38074581080)；這驗證來源測試與建置，不代表所有 Mac 的麥克風、權限與輸入框都已實測。
 
 測試使用固定範例與假的測試金鑰，不需要雲端帳戶。來源包使用明確檔案清單，不包含 `.git`、本機設定、密文、模型或二進位檔。
 

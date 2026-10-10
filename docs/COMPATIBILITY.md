@@ -28,7 +28,7 @@ This is an evidence ledger, not a claim that every field in an application is su
 - 標點修正的 xAI 固定句實測為 5/5：含長句分句、問句、中英夾雜與保留既有標點。最終提示詞為 540 字元，仍小於 550 上限。
 - 同一輪對照中，原版與補標點版的同音案例均為 19/21，未通過的是「全選…應用程式的全線」與「提示框…自己推出」。此前 21/21 不應視為穩定保證；未驗證的改寫仍退回原轉寫。
 - Google、Claude、OpenAI 使用官方協定與本機 fixtures／傳輸測試；沒有在此宣稱三家真實付費帳戶都已實測。
-- GitHub Actions 工作流程已準備；上傳前沒有 GitHub hosted run，不能稱為雲端 CI 已通過。
+- [GitHub Actions 首次 hosted run 已通過](https://github.com/0xedgelessblade/edgelesstype/actions/runs/38074581080)，對應提交 `0404b87efbadb02b445c62cd37d21e851c633d67`。範圍為 Core、文件參照、App 建置、自測與公開檢查；不包含真實麥克風、Metal 語音推論或目標輸入框操作。
 
 來源依據是本專案開發時的實測紀錄與可重跑測試。若下一次實測不同，應更新這份紀錄，而不是保留過時的成功宣稱。
 
