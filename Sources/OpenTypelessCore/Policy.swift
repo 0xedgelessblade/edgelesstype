@@ -23,9 +23,9 @@ public enum Policy {
         return !punct.contains(end)
     }
 
-    public static func plan(mode: Session, transcript: String, polishEnabled: Bool) -> InsertPlan {
+    public static func plan(mode: Session, transcript: String, polishEnabled: Bool, acceptModelText: Bool = false) -> InsertPlan {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard SpeechContent.hasWords(trimmed) else {
+        guard acceptModelText ? !trimmed.isEmpty : SpeechContent.hasWords(trimmed) else {
             return .drop("沒有聽到字")
         }
         switch mode {
@@ -182,7 +182,7 @@ public enum Promise {
     public static let beforePermission = """
     這支程式要三個權限，現在還沒有向系統開口。
 
-    麥克風：只有你短按 Fn 之後才錄音。聲音留在這台電腦，轉成文字就刪，不會把錄音傳出去。
+    麥克風：只有你短按 Fn 之後才錄音。預設由本機 Whisper 辨識；若明確選用 OpenAI 雲端辨識，該次錄音會傳送至 OpenAI。處理後刪除本機暫存錄音。
     輔助使用：把文字貼進你正在用的程式。風險是它能模擬貼上。會短暫讀取目標輸入框確認貼入，不上傳框內原有文字。
     輸入監控：才能收到 Fn。它只拿走 Fn，其他鍵照常給系統。
 

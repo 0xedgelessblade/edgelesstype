@@ -17,3 +17,9 @@ API 金鑰使用 AES-256-GCM 保存於 `private/store.encrypted.json`。本機�
 Clipboard restoration keeps a bounded, temporary copy of prior pasteboard items in memory only. It is not written to disk or sent to an API. The copy is released when an offer succeeds or is cancelled. Restoration requires confirmed insertion and unchanged pasteboard ownership; large or incomplete snapshots are not restored.
 
 Paste diagnostics write at most 64 fixed stage labels for the latest offer to a local temporary file. They contain no transcript, clipboard contents, window titles, keys, or arbitrary application identifiers. They are not transmitted and must not be included in public exports or issue attachments.
+
+## Optional audio transcription
+
+Local Whisper remains the default. Audio upload requires a separately stored OpenAI transcription choice and explicit audio consent. The choice is captured when recording starts. Only that recording is posted to the fixed HTTPS OpenAI transcription endpoint; redirects, cookies, credential storage and persistent response caching are disabled. The upload uses a generic filename, never a personal file path. Audio, response text and keys are not logged. The existing temporary recording is deleted after processing, including failures.
+
+The OpenAI transcription option reuses the encrypted OpenAI key record, independently of the selected text-correction provider. Merely opening the settings or saving a key does not enable audio upload. Preferences are runtime data in `Config/transcription.json` and are excluded from Git and public exports. Tests use synthetic bytes and URLProtocol fixtures, not private recordings or real credentials.

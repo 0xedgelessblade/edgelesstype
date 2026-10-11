@@ -17,7 +17,7 @@ flowchart TD
     D -- Yes --> F{"Context correction enabled?"}
     F -- No --> I["Paster"]
     F -- Yes --> G["Cloud API: transcript + dictionary"]
-    G --> H["Validate bounded corrections"]
+    G --> H["Check completed nonempty reply; convert to Traditional"]
     H --> I
     I --> J["Resolve focused editor; snapshot selection"]
     J --> K["Publish clipboard; send one Cmd-V chord"]
@@ -35,7 +35,7 @@ flowchart TD
 | 聽寫／翻譯狀態決策 | [Session.swift](../Sources/OpenTypelessCore/Session.swift)、[Policy.swift](../Sources/OpenTypelessCore/Policy.swift) | Fn+Shift 只開始翻譯，單按 Fn 結束 |
 | 常駐本機辨識 | [ResidentSpeechEngine.swift](../Sources/OpenTypeless/ResidentSpeechEngine.swift) | localhost、每次啟動 token、父程序退出後停止 worker |
 | 空白與標點攔截 | [SpeechContent.swift](../Sources/OpenTypelessCore/SpeechContent.swift) | 不把純標點或已知空白標記當成文字；保留數字、程式碼與 emoji |
-| 上下文校正 | [Vocabulary.swift](../Sources/OpenTypelessCore/Vocabulary.swift) | 不直接接受模型重寫全文；保留中英夾雜 |
+| 上下文校正 | [Vocabulary.swift](../Sources/OpenTypelessCore/Vocabulary.swift) | 直接採用完整模型回覆；保留成功、完整、非空白檢查及繁體轉換 |
 | 各家 API 協定 | [CloudProvider.swift](../Sources/OpenTypelessCore/CloudProvider.swift) | 模型集中設定；認證不放 URL；拒絕截斷／拒答結果 |
 | 金鑰與服務商 UI | [APISettingsWindow.swift](../Sources/OpenTypeless/APISettingsWindow.swift)、[SecretStore.swift](../Sources/OpenTypelessCore/SecretStore.swift) | 每家分開保存，錯誤不顯示原始回應或金鑰 |
 | 寫入與結果確認 | [Paster.swift](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation.swift](../Sources/OpenTypelessCore/PasteConfirmation.swift) | 不以 AX setter 回傳值或剪貼簿讀取當作成功 |
@@ -61,3 +61,7 @@ flowchart TD
 這個專案把可測試的政策與 API 協定抽到 Core，原生視窗和系統整合留在 App 層。Controller 仍集中於 `main.swift`；這是目前的結構，不宣稱已實作完整框架或全面解耦。
 
 目前的貼入驗證是有證據的 best effort，並非跨 App 的交易協定。當目標不提供可讀取文字、焦點已改變、權限不完整或元件變更時，可能需要手動貼上。請一起閱讀 [相容性與已知限制](COMPATIBILITY.md) 和 [問題索引](TROUBLESHOOTING.md)。
+
+## Optional first-stage OpenAI transcription
+
+The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`; it never silently falls back to another backend. Both results enter the same Traditional Chinese and full-text correction pipeline. `Config/transcription.json` stores only the backend choice and audio consent. See [privacy boundaries](../SECURITY.md).

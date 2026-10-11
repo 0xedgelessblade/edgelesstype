@@ -41,7 +41,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>只有短按 Fn 之後才錄音。聲音留在這台電腦，轉成文字就刪，不會把錄音傳出去。</string>
+  <string>只有短按 Fn 之後才錄音。預設使用本機 Whisper；只有選用 OpenAI 雲端辨識時，錄音才會傳送至 OpenAI。處理後刪除本機暫存錄音。</string>
 </dict>
 </plist>
 PLIST

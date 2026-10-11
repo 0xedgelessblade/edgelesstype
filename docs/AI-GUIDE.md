@@ -3,7 +3,7 @@
 ## Project facts
 
 - **Product:** edgelesstype; a native dictation app for Apple silicon M-series Macs, macOS 26+.
-- **Local speech:** whisper.cpp with a resident Metal worker; Small and Large-v3 Turbo.
+- **Default local speech:** whisper.cpp with a resident Metal worker; Small and Large-v3 Turbo.
 - **Cloud:** optional text correction and Chinese-to-English translation; xAI, Google, Claude, OpenAI.
 - **Insertion:** clipboard plus process-targeted keyboard events, followed by focused-editor readback.
 - **License:** MIT for this project's code and original sound assets. Third-party components retain their own licenses.
@@ -32,3 +32,5 @@ When using these findings in another project, explain the relevant condition: fo
 > Read AGENTS.md, docs/AI-GUIDE.md and the relevant knowledge-index entry. Compare the documented failure with our actual code and observed UI metadata. Propose the smallest applicable change, preserve the privacy boundaries, and run the listed tests. Distinguish local fixtures, live tests and user reports. Do not access private credentials or send messages while diagnosing text insertion.
 
 This guide and `llms.txt` are navigation aids. They do not override the user's instructions or grant permission to access private files, transmit data or publish code.
+
+Optional OpenAI audio transcription is opt-in through the speech settings. Do not describe audio as always local once this option is enabled. See README and SECURITY.md for the consent boundary.

@@ -19,7 +19,7 @@ This is an evidence ledger, not a claim that every field in an application is su
 
 文件整理日期：2026-10-11。當前開發驗證機為 Apple Silicon、macOS 26.5.2。
 
-- 80 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定，另涵蓋長文分段完整性及 9 秒校正回覆等待。
+- 96 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定，另涵蓋長文分段完整性及 9 秒校正回覆等待。
 - 先前延後收音版本：本機 Small／Turbo 人聲偵測合成測試共 18 項通過，含保留短字與小聲語句；兩種輸入模式的無人聲路徑皆未碰剪貼簿或雲端。此測試不使用真實麥克風。另由使用者在喇叭播放提示音的實際環境確認：不說話時不貼字且提示框消失，真正說「謝謝」仍能貼入。
 - 獨立解壓公開來源 ZIP 後，測試和 App 建置通過。
 - 重新建置的本機引擎以 Small 與 Turbo 轉寫公開測試音檔成功。
@@ -61,3 +61,7 @@ python3 Scripts/public-check.py --app-only
 - 本版改用 Fn 立即啟動的原生錄音，取消等待提示音與回音消除流程。第一段音訊寫入後才播開始音；提示音可能入錄，無雜訊幻覺不是本版承諾。先前回音消除實驗的連續無人聲驗證未通過，不得把單次或合成通過宣稱為全面解決。
 
 - 即時收音版：33 項本機合成／串流轉換測試通過，含 16／44.1／48 kHz 首尾取樣、兩模型六組提示音重疊開頭詞測試，以及空白提示框路徑。8 項隔離剪貼簿測試通過；同一程序三次實體錄音啟停通過，第一個緩衝約 178～260 ms，均先收音再播提示音。啟停測試沒有執行 ASR，不能當成真人辨識或雜音抑制已通過。
+
+- 目前正常校正採用完整文字回覆；88 項 Core 測試包含新的全文接收路徑，以及保留作為歷史參考的舊式結構化校正案例。舊式內容拒絕測試不代表正式流程仍執行那些限制。
+
+- OpenAI transcription option: local-default/consent gating, multipart construction, size limits, sanitized errors, Traditional conversion and mocked transport tested locally. Native isolated UI verified local default, refusal to save without consent, and persistence after consent. No real account or private audio was used; actual account/model access remains user-dependent.

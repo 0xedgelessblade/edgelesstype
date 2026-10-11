@@ -32,7 +32,7 @@ final class Paster {
         trace(AXIsProcessTrusted() ? "startup_accessibility_trusted" : "startup_accessibility_not_trusted")
     }
 
-    func offer(_ text: String, into pid: pid_t?) {
+    func offer(_ text: String, into pid: pid_t?, acceptModelText: Bool = false) {
         cancelOffer()
         diagnosticEvents = []
         lastInsertionConfirmed = false
@@ -42,7 +42,7 @@ final class Paster {
             return
         }
         let text = traditional.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard SpeechContent.hasWords(text) else { return }
+        guard acceptModelText ? !text.isEmpty : SpeechContent.hasWords(text) else { return }
         pendingText = text
         targetPID = pid
         isOffering = true

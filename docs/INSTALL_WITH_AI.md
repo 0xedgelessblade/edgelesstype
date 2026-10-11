@@ -152,3 +152,5 @@ Return a concise summary, not a diagnostic archive. Use fixed outcomes and a sou
 If the user has not done the voice test, say **built and opened; voice verification pending**. If permission is pending, name the required user action. Never equate passing CI, successful compilation, or a visible app window with full end-to-end success.
 
 This is a source-installation workflow, not a guarantee for every Mac, coding assistant, API account or editor. See the [evidence and compatibility limits](COMPATIBILITY.md). No DMG is provided in this workflow, and no diagnostic data is automatically sent to the author.
+
+The optional OpenAI speech-recognition setting is separate from text-only correction. Installation must leave local Whisper selected unless the user explicitly chooses cloud audio upload. The in-app speech settings disclose the upload and require consent; merely saving an OpenAI key must not enable it.

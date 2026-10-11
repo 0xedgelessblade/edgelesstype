@@ -1,21 +1,15 @@
 import Foundation
 import OpenTypelessCore
 
-enum ContextCorrectionOutputError: Error { case rejected(String) }
-
 enum ContextCorrectionService {
     static func correct(_ text: String, settings: VocabularySettings, config: AppConfig) throws -> String {
         let entries = ContextCorrection.candidates(in: text, settings: settings)
         guard settings.contextCorrectionEnabled, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         let provider = try CloudAccess.preferences.load().provider
-        return try ContextCorrection.correctingChunks(text) { chunk in
+        return try ContextCorrection.correctFullText(text) { chunk in
             let body = try ContextCorrection.draft(text: chunk, entries: entries,
                 model: provider.model(for: .correction), timeout: provider.correctionTimeoutSeconds)
-            let response = try CloudAccess.complete(body, purpose: .correction)
-            guard let result = ContextCorrection.validatedApply(response: response, to: chunk, entries: entries) else {
-                throw ContextCorrectionOutputError.rejected(response)
-            }
-            return result
+            return try CloudAccess.complete(body, purpose: .correction)
         }
     }
 
@@ -66,9 +60,7 @@ enum ContextCorrectionService {
                         model: try CloudAccess.preferences.load().provider.model(for: .correction))
                     let response = try CloudAccess.complete(draft, purpose: .correction)
                     if onlyPunctuation { print("fixed-punctuation-response: \(response)") }
-                    guard let actual = ContextCorrection.validatedApply(response: response, to: input, entries: settings.entries) else {
-                        throw ContextCorrectionOutputError.rejected(response)
-                    }
+                    let actual = try ContextCorrection.acceptFullText(response)
                     let preserved = SentencePunctuation.validated(actual, preserving: expected) != nil
                     // Short mixed-language requests need a sentence ending,
                     // not one arbitrary comma placement. Long Chinese clauses
@@ -80,10 +72,7 @@ enum ContextCorrectionService {
                     print("\(passed ? "PASS" : "FAIL") \(String(format: "%.2f", Date().timeIntervalSince(start)))s | \(input) -> \(actual)")
                 } catch {
                     failures += 1
-                    if case ContextCorrectionOutputError.rejected(let response) = error {
-                        // Only this fixed public regression corpus is logged.
-                        print("FAIL rejected-test-output | \(input) | \(response)")
-                    } else { print("FAIL service-error:\((error as? CloudError)?.rawValue ?? "unknown") | \(input)") }
+                    print("FAIL service-error:\((error as? CloudError)?.rawValue ?? "unknown") | \(input)")
                 }
             }
             print("context-correction: \(cases.count - failures)/\(cases.count)")

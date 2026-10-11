@@ -57,6 +57,10 @@ struct TranslateConfig: Codable {
 }
 
 enum AppPaths {
+    static var transcriptionStore: TranscriptionPreferencesStore {
+        TranscriptionPreferencesStore(url: projectRoot().appendingPathComponent("Config/transcription.json"))
+    }
+
     static var soundSettingsStore: SoundSettingsStore {
         SoundSettingsStore(url: projectRoot().appendingPathComponent("Config/sounds.json"))
     }
@@ -164,9 +168,16 @@ enum HiddenInput {
 struct Transcriber {
     let config: AppConfig
     var vocabulary: VocabularySettings? = nil
+    var transcription = TranscriptionPreferences()
 
     func transcribe(url: URL) throws -> String {
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
+        return try TranscriptionRouter.run(transcription,
+            local: { try localTranscribe(url: url) },
+            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription) })
+    }
+
+    private func localTranscribe(url: URL) throws -> String {
         if config.residentSpeech != nil {
             return try ResidentSpeechEngine.shared.transcribe(url: url, config: config,
                 prompt: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms))
@@ -313,6 +324,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var startedAt: Date?
     private var recordingVocabulary = VocabularySettings()
     private var apiEditor: APISettingsWindow?
+    private var transcriptionKeyEditor: APISettingsWindow?
+    private var transcriptionEditor: TranscriptionSettingsWindow?
+    private var recordingTranscription = TranscriptionPreferences()
+    private var transcriptionBackend: TranscriptionBackend {
+        (try? AppPaths.transcriptionStore.load().backend) ?? .localWhisper
+    }
     private var vocabularyEditor: VocabularyWindow?
     private var pendingTiming: DictationTiming?
 
@@ -349,6 +366,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         let applicationMenu = NSMenu(title: "edgelesstype")
         let dictionary = applicationMenu.addItem(withTitle: "字典…", action: #selector(showVocabulary), keyEquivalent: ",")
         dictionary.target = self
+        let speech = applicationMenu.addItem(withTitle: "語音辨識…", action: #selector(showTranscriptionSettings), keyEquivalent: "")
+        speech.target = self
         let api = applicationMenu.addItem(withTitle: "API 設定…", action: #selector(showAPISettings), keyEquivalent: "")
         api.target = self
         let sounds = applicationMenu.addItem(withTitle: "提示音…", action: #selector(showSoundSettings), keyEquivalent: "")
@@ -385,13 +404,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         polish.target = self
+        let speech = menu.addItem(withTitle: "語音辨識：" + transcriptionBackend.title + "…", action: #selector(showTranscriptionSettings), keyEquivalent: "")
+        speech.target = self
         let api = menu.addItem(withTitle: "API 設定…", action: #selector(showAPISettings), keyEquivalent: "")
         api.target = self
         let sounds = menu.addItem(withTitle: "提示音…", action: #selector(showSoundSettings), keyEquivalent: "")
         sounds.target = self
         let vocabulary = menu.addItem(withTitle: "字典…", action: #selector(showVocabulary), keyEquivalent: "")
         vocabulary.target = self
-        if let resident = config?.residentSpeech {
+        if transcriptionBackend == .localWhisper, let resident = config?.residentSpeech {
             menu.addItem(.separator())
             menu.addItem(withTitle: "Metal GPU 常駐辨識", action: nil, keyEquivalent: "")
             for (key, title) in [("turbo", "Large-v3 Turbo"), ("small", "Small")] {
@@ -436,6 +457,33 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func showTranscriptionSettings() {
+        guard session == .idle, !busy else { panel.showMessage(TranscriptionError.busy.errorDescription!); return }
+        if transcriptionEditor == nil {
+            let editor = TranscriptionSettingsWindow(store: AppPaths.transcriptionStore)
+            editor.onOpenAIKey = { [weak self] in
+                guard let self else { return }
+                if self.transcriptionKeyEditor == nil { self.transcriptionKeyEditor = APISettingsWindow(keyOnlyProvider: .openai) }
+                self.transcriptionKeyEditor?.showWindow(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            editor.onSave = { [weak self] preferences in
+                guard let self, self.session == .idle, !self.busy else { throw TranscriptionError.busy }
+                try AppPaths.transcriptionStore.save(preferences)
+                self.rebuildMenu()
+                if preferences.backend == .localWhisper { self.warmSpeechEngine() }
+                else {
+                    ResidentSpeechEngine.shared.shutdown()
+                    self.vocabularyEditor?.setModelStatus("GPT Transcribe · OpenAI 雲端")
+                }
+            }
+            transcriptionEditor = editor
+        }
+        transcriptionEditor?.refresh()
+        transcriptionEditor?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc private func showAPISettings() {
         if apiEditor == nil { apiEditor = APISettingsWindow() }
         apiEditor?.showWindow(nil)
@@ -451,10 +499,13 @@ final class AppController: NSObject, NSApplicationDelegate {
                 editor.onSave = { settings in try AppPaths.vocabularyStore.save(settings) }
                 editor.onSoundSettings = { [weak self] in self?.showSoundSettings() }
                 editor.onAPISettings = { [weak self] in self?.showAPISettings() }
+                editor.onTranscriptionSettings = { [weak self] in self?.showTranscriptionSettings() }
                 editor.onQuit = { [weak self] in self?.quit() }
                 vocabularyEditor = editor
             }
-            if let resident = config?.residentSpeech {
+            if transcriptionBackend == .openAI {
+                vocabularyEditor?.setModelStatus("GPT Transcribe · OpenAI 雲端")
+            } else if let resident = config?.residentSpeech {
                 let info = ResidentSpeechEngine.shared.diagnostics
                 vocabularyEditor?.setModelStatus(info.ready && info.metal && info.pid != nil
                     ? "\(resident.displayName) · Metal GPU · 已常駐" : "正在預載 \(resident.displayName)…")
@@ -485,6 +536,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func warmSpeechEngine() {
+        guard transcriptionBackend == .localWhisper else {
+            vocabularyEditor?.setModelStatus("GPT Transcribe · OpenAI 雲端")
+            return
+        }
         guard let config, let resident = config.residentSpeech else { return }
         status.button?.title = "載入"
         vocabularyEditor?.setModelStatus("正在預載 \(resident.displayName)…")
@@ -492,11 +547,13 @@ final class AppController: NSObject, NSApplicationDelegate {
             do {
                 try ResidentSpeechEngine.shared.warmUp(config: config)
                 DispatchQueue.main.async {
+                    guard self.transcriptionBackend == .localWhisper else { return }
                     if !self.busy && self.session == .idle { self.status.button?.title = "edgelesstype" }
                     self.vocabularyEditor?.setModelStatus("\(resident.displayName) · Metal GPU · 已常駐")
                 }
             } catch {
                 DispatchQueue.main.async {
+                    guard self.transcriptionBackend == .localWhisper else { return }
                     self.status.button?.title = "模型未就緒"
                     self.vocabularyEditor?.setModelStatus((error as? SpeechEngineError)?.errorDescription ?? "模型載入失敗，可從語音選單切換 Small 後重試。")
                 }
@@ -582,7 +639,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 toldMissing = true
                 let alert = NSAlert()
                 alert.messageText = "還沒有輸入監控"
-                alert.informativeText = "系統設定要開的是「輸入監控」，不是輔助使用。把「edgelesstype」打開，Fn 才進得來。聲音仍然不會上傳。"
+                alert.informativeText = "系統設定要開的是「輸入監控」，不是輔助使用。把「edgelesstype」打開，Fn 才進得來。本機 Whisper 不上傳錄音；只有選用雲端辨識時才傳送至 OpenAI。"
                 alert.addButton(withTitle: "打開輸入監控")
                 alert.addButton(withTitle: "先不要")
                 NSApp.setActivationPolicy(.regular)
@@ -619,6 +676,8 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func begin(_ mode: Session) {
         guard let config else { return }
+        do { recordingTranscription = try AppPaths.transcriptionStore.load() }
+        catch { panel.showWarning("語音辨識設定無法讀取，請重新選擇並儲存。", title: "無法開始錄音"); return }
         pendingTiming = nil
         paster.cancelOffer()
         // Read for each recording; user edits need no app restart. A broken
@@ -690,7 +749,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let mode = session
         var timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds,
             mode: mode == .translation ? "translation" : "dictation",
-            model: config?.residentSpeech?.displayName ?? "Small CPU")
+            model: recordingTranscription.backend == .openAI ? OpenAITranscriptionWire.model : (config?.residentSpeech?.displayName ?? "Small CPU"))
         session = .idle
         pendingRecordingStart.cancel()
         soundPlayer.cancelPreview()
@@ -763,9 +822,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let config else { return }
         let transcript: String
         do {
-            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary).transcribe(url: url))
+            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription).transcribe(url: url))
         } catch {
-            DispatchQueue.main.async { self.panel.showMessage((error as? SpeechEngineError)?.errorDescription ?? "轉寫失敗，沒有貼上") }
+            let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
+                ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
+            DispatchQueue.main.async { self.panel.showWarning(reason, title: "語音辨識未完成") }
             return
         }
         timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
@@ -782,16 +843,17 @@ final class AppController: NSObject, NSApplicationDelegate {
                 corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config)
                 timing.correctionOutcome = corrected == transcript ? "unchanged" : "corrected"
             } catch {
-                if case ContextCorrectionOutputError.rejected = error { timing.correctionOutcome = "rejected" }
-                else if let failure = error as? CloudError { timing.correctionOutcome = failure.rawValue }
+                if let failure = error as? CloudError { timing.correctionOutcome = failure.rawValue }
                 else { timing.correctionOutcome = "request_failed" }
+                timing.saveCorrectionFailure()
                 corrected = transcript
             }
         } else {
             corrected = transcript
         }
         timing.correctionSeconds = Double(DispatchTime.now().uptimeNanoseconds - correctionStarted)/1e9
-        let plan = Policy.plan(mode: mode, transcript: corrected, polishEnabled: config.polish.enabled)
+        let plan = Policy.plan(mode: mode, transcript: corrected, polishEnabled: config.polish.enabled,
+            acceptModelText: ["corrected", "unchanged"].contains(timing.correctionOutcome))
         switch plan {
         case .drop:
             DispatchQueue.main.async { self.panel.hide() }
@@ -799,13 +861,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             // Submit once. Offering the polish as another paste duplicates
             // text that has already reached the destination.
             var finalText = rough
-            if Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
+            if !recordingVocabulary.contextCorrectionEnabled,
+               Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
                OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
                 do {
                     let polished = try polish(rough, config: config)
                     if SpeechContent.hasWords(polished) { finalText = polished }
                 } catch {
                     timing.correctionOutcome = (error as? CloudError)?.rawValue ?? "request_failed"
+                    timing.saveCorrectionFailure()
                 }
             }
             guard let text = try? OutputPolicy.traditional(finalText) else {
@@ -817,7 +881,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self.pendingTiming = readyTiming
                 self.panel.showPending(text, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
-                self.paster.offer(text, into: self.targetPID)
+                self.paster.offer(text, into: self.targetPID, acceptModelText: ["corrected", "unchanged"].contains(readyTiming.correctionOutcome))
             }
         case .waitForEnglish(let chinese):
             do {

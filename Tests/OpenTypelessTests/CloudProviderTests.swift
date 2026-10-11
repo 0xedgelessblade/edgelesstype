@@ -46,7 +46,7 @@ final class CloudProviderTests: XCTestCase {
         }
     }
 
-    func testStructuredCorrectionAndPlainTranslationPayloads() throws {
+    func testPlainCorrectionAndTranslationPayloads() throws {
         for provider in CloudProvider.allCases {
             let correction = try ContextCorrection.draft(text: "人定聖天", entries: [], model: "ignored", timeout: provider.correctionTimeoutSeconds)
             let c = try CloudWire.request(correction, provider: provider, purpose: .correction, key: "fixture")
@@ -58,7 +58,7 @@ final class CloudProviderTests: XCTestCase {
                 XCTAssertEqual(tj["model"] as? String, "grok-4.7")
                 XCTAssertEqual(cj["reasoning_effort"] as? String, "none")
                 XCTAssertEqual(tj["reasoning_effort"] as? String, "high")
-                XCTAssertNotNil(cj["response_format"]); XCTAssertNil(tj["response_format"])
+                XCTAssertNil(cj["response_format"]); XCTAssertNil(tj["response_format"])
             } else if provider == .openai {
                 XCTAssertEqual(cj["model"] as? String, "gpt-6-luna")
                 XCTAssertEqual(tj["model"] as? String, "gpt-6-luna")
@@ -66,7 +66,7 @@ final class CloudProviderTests: XCTestCase {
                 XCTAssertEqual((tj["reasoning"] as? [String: Any])?["effort"] as? String, "none")
                 XCTAssertEqual(c.timeoutInterval, TimeInterval(Int32.max))
                 XCTAssertEqual(cj["store"] as? Bool, false)
-                XCTAssertNotNil(cj["text"]); XCTAssertNil(tj["text"])
+                XCTAssertNil(cj["text"]); XCTAssertNil(tj["text"])
                 XCTAssertNil(cj["temperature"])
             } else if provider == .anthropic {
                 // Both tasks must disable thinking, including translation drafts
@@ -78,11 +78,11 @@ final class CloudProviderTests: XCTestCase {
                     XCTAssertNil(request["reasoning_effort"])
                     XCTAssertNil(request["temperature"])
                 }
-                XCTAssertNotNil((cj["output_config"] as? [String: Any])?["format"])
+                XCTAssertNil((cj["output_config"] as? [String: Any])?["format"])
                 XCTAssertNil((tj["output_config"] as? [String: Any])?["format"])
                 XCTAssertNil(cj["temperature"])
             } else {
-                XCTAssertEqual((cj["generationConfig"] as? [String: Any])?["responseMimeType"] as? String, "application/json")
+                XCTAssertNil((cj["generationConfig"] as? [String: Any])?["responseMimeType"])
                 XCTAssertNil((tj["generationConfig"] as? [String: Any])?["responseMimeType"])
             }
         }
@@ -90,7 +90,8 @@ final class CloudProviderTests: XCTestCase {
 
     func testAllStructuredProvidersAllowNullablePunctuation() throws {
         for provider in [CloudProvider.openai, .anthropic, .google] {
-            let draft = try ContextCorrection.draft(text: "你好", entries: [], model: "fixture")
+            var draft = try ContextCorrection.draft(text: "你好", entries: [], model: "fixture")
+            draft.jsonOutput = true // Explicit legacy adapter fixture; normal correction is plain text.
             let request = try CloudWire.request(draft, provider: provider, purpose: .correction, key: "fixture")
             let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             let schema: [String: Any]

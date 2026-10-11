@@ -16,6 +16,9 @@ public enum OutputPolicy {
     }
 
     public static func correctionWarning(outcome: String) -> String? {
+        if outcome.hasPrefix("rejected:"), let reason = CorrectionRejection(rawValue: String(outcome.dropFirst("rejected:".count))) {
+            return reason.explanation + "\n已保留繁體文字，標點可能不完整。"
+        }
         switch outcome {
         case "corrected", "unchanged", "not_requested": return nil
         case "quota":

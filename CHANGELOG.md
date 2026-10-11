@@ -2,6 +2,43 @@
 
 Notable changes to edgelesstype. Dates identify source updates; they do not imply a separately packaged binary release.
 
+## 2026-10-11 — Selectable transcription and full-text correction
+
+### Why this change
+
+Speech recognition and text correction now have independent choices. Local Whisper remains the default, while an explicit OpenAI option supports workflows that prefer cloud transcription. This update does not claim that either route is universally faster or more accurate.
+
+The previous correction path could reject an entire reply when a word substitution failed a local content rule. Correction now accepts the model's complete text directly, with successful transport, completion and non-empty output checks, followed by local Traditional Chinese conversion.
+
+### Added
+
+- A speech-recognition selector in the app menu and dictionary window: **Whisper (local)** or **GPT Transcribe (OpenAI cloud)**.
+- Explicit audio-upload consent before enabling OpenAI transcription. The choice is captured at recording start and remains stable for that recording.
+- A dedicated OpenAI key-settings entry that reuses the encrypted OpenAI record without changing the text-correction provider.
+- A fixed HTTPS audio-transcription endpoint, generic upload filenames, WAV/file-size checks, redirect blocking and sanitized error messages. Cloud mode skips local Whisper warm-up and does not silently fall back to another backend.
+
+### Changed
+
+- Request full corrected text instead of a structured list of word substitutions.
+- Remove homophone/dictionary matching, edit-count and word-length limits, source-position matching, overlap checks and punctuation comparison from the normal correction path.
+- Preserve long-text segmentation and paste the combined result once. Do not run an additional polish pass after contextual correction.
+- Keep Traditional Chinese conversion before preview and paste, including fallback text. Failed, incomplete or empty replies retain the existing warning and recovery behavior.
+- Retain a separate local failure-status record containing only a fixed reason code, provider and timestamp; a later success no longer overwrites the latest failure record.
+- Update the UI and privacy documentation to distinguish optional audio upload from text-only correction. Runtime preferences and diagnostics remain excluded from Git and public exports.
+
+### Validation and boundaries
+
+- 96 core tests passed locally, covering backend selection, consent gating, request/response formats, mocked network transport, full-text correction and Traditional Chinese conversion.
+- Paste-flow regression tests, app self-check and documentation/privacy checks passed locally. Native settings tests verified the local default, blocked cloud activation without consent, persisted choices and switching back to local Whisper.
+- No real API credentials or private recordings were used for cloud-transcription testing. Actual account/model access still depends on the user's OpenAI account.
+- Cloud transcription requires network access and API credit, sends the recording to OpenAI and has a 25 MB per-file limit. Model quality and unchanged meaning are not guaranteed by the basic reply checks. Hosted CI results are tracked separately in [GitHub Actions](https://github.com/0xedgelessblade/edgelesstype/actions).
+
+### Acknowledgments / 特別感謝
+
+Special thanks to [@plumy_river on X](https://x.com/plumy_river) / [@plumyriver0327 on Threads](https://www.threads.com/@plumyriver0327) for their development assistance and support for this update.
+
+感謝 [@plumy_river（X）](https://x.com/plumy_river)／[@plumyriver0327（Threads）](https://www.threads.com/@plumyriver0327) 對本次更新提供的開發協助與支持。
+
 ## 2026-10-11 — Paste reliability and output controls
 
 ### Fixed

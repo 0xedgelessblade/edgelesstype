@@ -2,12 +2,12 @@
 
 <img src="Resources/AppIcon-source.png" width="96" alt="edgelesstype app icon">
 
-**Open-source voice dictation for Apple silicon Macs.** Local Whisper recognition, optional text-only LLM correction, and verified insertion into supported input fields.
+**Open-source voice dictation for Apple silicon Macs.** Local Whisper or opt-in OpenAI transcription, optional text correction, and evidence-based insertion into supported input fields.
 
 公開作者：[edgelessblade](https://github.com/0xedgelessblade) · [MIT License](LICENSE) · [引用資訊](CITATION.cff) · [更新日誌 / Changelog](CHANGELOG.md)
 
 給 **Apple Silicon M 系列 Mac、macOS 26 以上**使用的開源語音輸入 App。
-錄音與 Whisper 語音辨識留在本機；可選擇自己的 API 金鑰，做上下文校正和中翻英。
+預設使用本機 Whisper；也可在「語音辨識」明確選用 OpenAI GPT Transcribe，上傳錄音轉成文字。後續上下文校正與中翻英服務可分開設定。
 
 ## 不會 CLI？交給你的 AI 安裝
 
@@ -115,13 +115,13 @@ UI 刻意只提供四家服務商，不做大型模型目錄。模型可用性�
 
 ## 字典、提示音與隱私
 
-公開預設字典只含 `Config/dictionary-seed.json` 中的英文項目。首次啟動建立個人字典，之後自行新增的中文或英文詞條都可以正常保存。中文同音詞與成語校正由上下文處理，不需要全部塞進字典。
+公開預設字典只含 `Config/dictionary-seed.json` 中的英文項目。首次啟動建立個人字典，之後自行新增的中文或英文詞條都可以正常保存。中文同音詞與成語校正由上下文處理，不需要全部塞進字典。校正直接採用模型完整回覆，只檢查請求成功、回覆完整且非空白，輸出前在本機轉為繁體中文。
 
 開始／結束提示音是本專案生成的低音量柔和音色，沒有外部採樣；可用 `python3 Scripts/make-sounds.py` 重建。
 
 每位使用者的金鑰密文儲存在自己專案的 `private/store.encrypted.json`；解密鑰匙在自己 Mac 的 `~/.config/codex-secrets/open-typeless-keyring.json`。後者是沿用的本機目錄名稱，不是 Codex 雲端。兩者都不公開；呼叫 API 時才以 HTTPS 向所選服務商提供金鑰認證。詳見 [安全說明](SECURITY.md)。
 
-公開版不含開發者的金鑰、個人設定、使用紀錄、錄音、編譯 App 或私人字典。開啟雲端功能時只送轉寫文字和字典；不送錄音、其他視窗內容或剪貼簿驗證資料。OpenAI 請求設定 `store: false`。服務商自身的資料政策另依其規定。
+公開版不含開發者的金鑰、個人設定、使用紀錄、錄音、編譯 App 或私人字典。文字校正／翻譯送出轉寫文字與字典；只有明確選用 OpenAI 雲端語音辨識並同意後，才傳送錄音。其他視窗內容與剪貼簿驗證資料不上傳。OpenAI Responses 文字請求設定 `store: false`；音訊 API 不沿用該參數。服務商自身的資料政策另依其規定。
 
 ## 測試與公開來源包
 
@@ -142,3 +142,14 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 
 本專案程式碼、原創提示音採 [MIT License](LICENSE)，公開作者為 **edgelessblade**。
 語音引擎使用 [whisper.cpp v1.8.1](https://github.com/ggml-org/whisper.cpp/tree/a91dd3be72f70dd1b3cb6e252f35fa17b93f596c)，模型來自 [Whisper](https://huggingface.co/ggerganov/whisper.cpp)，錄音使用 macOS 原生音訊引擎；[FFmpeg](https://ffmpeg.org/) 保留供音訊工具與測試使用。第三方元件各自的授權仍適用；本來源包不重新分發其二進位檔。
+
+## 選擇第一階段語音辨識
+
+從字典視窗或 App 選單開啟「語音辨識…」：
+
+- **Whisper（本機）**：預設選項；Small／Large-v3 Turbo 在本機辨識，不傳送錄音。
+- **GPT Transcribe（OpenAI 雲端）**：固定使用 `gpt-transcribe`。需勾選錄音上傳同意並儲存；之後每次結束錄音才傳送該次音訊，需要網路、OpenAI 金鑰與 API 額度。
+
+「OpenAI 金鑰設定」沿用加密保存的 OpenAI 紀錄，不更改文字校正服務商。雲端單次錄音上限 25 MB；過大時會提示分段錄製或切回本機，不會自動切換辨識服務。API 回覆仍在本機轉為繁體。
+
+介面切換與隔離傳輸測試已驗證；沒有使用真實帳戶金鑰或上傳私人錄音作測試。官方介面：[File transcription](https://developers.openai.com/api/docs/guides/speech-to-text)。

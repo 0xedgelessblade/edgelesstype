@@ -120,7 +120,8 @@ final class OpenTypelessTests: XCTestCase {
 
     func testPromiseMentionsLocalAudioAndFn() {
         XCTAssertTrue(Promise.beforePermission.contains("Fn"))
-        XCTAssertTrue(Promise.beforePermission.contains("不會把錄音傳出去"))
+        XCTAssertTrue(Promise.beforePermission.contains("預設由本機 Whisper"))
+        XCTAssertTrue(Promise.beforePermission.contains("若明確選用 OpenAI 雲端辨識"))
         XCTAssertTrue(Promise.beforePermission.contains("現在還沒有向系統開口"))
         XCTAssertTrue(PermissionPane.inputMonitoring.contains("Privacy_ListenEvent"))
         XCTAssertFalse(PermissionPane.inputMonitoring.contains("Privacy_Accessibility"))

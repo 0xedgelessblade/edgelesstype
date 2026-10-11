@@ -1,6 +1,6 @@
 # edgelesstype
 
-> Native macOS dictation for Apple silicon. Local Whisper speech recognition, optional text-only cloud correction, and evidence-based paste verification.
+> Native macOS dictation for Apple silicon. Default local Whisper or opt-in OpenAI audio transcription, separate cloud text correction, and evidence-based paste verification.
 
 ## Read first
 - [User guide](README.md)

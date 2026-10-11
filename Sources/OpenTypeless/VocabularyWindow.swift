@@ -5,6 +5,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
     var onClose: (() -> Void)?
     var onSoundSettings: (() -> Void)?
     var onAPISettings: (() -> Void)?
+    var onTranscriptionSettings: (() -> Void)?
     var onQuit: (() -> Void)?
     var onSave: ((VocabularySettings) throws -> Void)?
     private var settings: VocabularySettings
@@ -61,6 +62,10 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         sounds.bezelStyle = .rounded
         sounds.image = NSImage(systemSymbolName: "speaker.wave.2", accessibilityDescription: nil)
         sounds.imagePosition = .imageLeft
+        let speech = NSButton(title: "語音辨識…", target: self, action: #selector(openTranscriptionSettings))
+        speech.bezelStyle = .rounded
+        speech.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
+        speech.imagePosition = .imageLeft
         let api = NSButton(title: "API 設定…", target: self, action: #selector(openAPISettings))
         api.bezelStyle = .rounded
         api.image = NSImage(systemSymbolName: "key.horizontal", accessibilityDescription: nil)
@@ -84,7 +89,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         enabled.target = self
         enabled.action = #selector(toggleContext)
         enabled.font = .systemFont(ofSize: 13, weight: .medium)
-        let privacy = NSTextField(wrappingLabelWithString: "開啟後，轉寫文字與字典會送至所選雲端服務；錄音留在本機。")
+        let privacy = NSTextField(wrappingLabelWithString: "開啟後，文字與字典送至校正服務。錄音是否上傳由「語音辨識」設定決定。")
         privacy.font = .systemFont(ofSize: 12)
         privacy.textColor = .secondaryLabelColor
         for child in [enabled, privacy] {
@@ -99,11 +104,11 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         quit.font = .systemFont(ofSize: 12)
         quit.contentTintColor = .secondaryLabelColor
 
-        for child in [title, hint, shortcuts, help, add, divider, search, sounds, api, countLabel, modelStatus, scroll, preferences, status, quit] {
+        for child in [title, hint, shortcuts, help, add, divider, search, sounds, speech, api, countLabel, modelStatus, scroll, preferences, status, quit] {
             child.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(child)
         }
-        let searchWidth = search.widthAnchor.constraint(equalToConstant: 340)
+        let searchWidth = search.widthAnchor.constraint(equalToConstant: 260)
         searchWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             title.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
@@ -134,14 +139,18 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
             search.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             search.heightAnchor.constraint(equalToConstant: 32),
             search.widthAnchor.constraint(greaterThanOrEqualToConstant: 220), searchWidth,
-            search.trailingAnchor.constraint(lessThanOrEqualTo: sounds.leadingAnchor, constant: -24),
+            search.trailingAnchor.constraint(lessThanOrEqualTo: sounds.leadingAnchor, constant: -16),
             sounds.centerYAnchor.constraint(equalTo: search.centerYAnchor),
-            sounds.trailingAnchor.constraint(equalTo: api.leadingAnchor, constant: -10),
-            sounds.widthAnchor.constraint(equalToConstant: 106),
+            sounds.trailingAnchor.constraint(equalTo: speech.leadingAnchor, constant: -10),
+            sounds.widthAnchor.constraint(equalToConstant: 90),
             sounds.heightAnchor.constraint(equalToConstant: 32),
+            speech.centerYAnchor.constraint(equalTo: search.centerYAnchor),
+            speech.trailingAnchor.constraint(equalTo: api.leadingAnchor, constant: -10),
+            speech.widthAnchor.constraint(equalToConstant: 112),
+            speech.heightAnchor.constraint(equalToConstant: 32),
             api.centerYAnchor.constraint(equalTo: search.centerYAnchor),
             api.trailingAnchor.constraint(equalTo: add.trailingAnchor),
-            api.widthAnchor.constraint(equalToConstant: 116),
+            api.widthAnchor.constraint(equalToConstant: 106),
             api.heightAnchor.constraint(equalToConstant: 32),
             countLabel.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             countLabel.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 16),
@@ -207,7 +216,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         中翻英
         按住 Shift，再短按 Fn 開始，隨即放開 Shift。說完只短按 Fn 結束，會貼入英文。
 
-        中翻英需先到「API 設定」儲存有效金鑰，使用目前選用的雲端服務。Small／Turbo 只負責本機語音辨識。
+        中翻英需先到「API 設定」儲存有效金鑰，使用目前選用的雲端服務。第一步可到「語音辨識」選擇本機 Whisper 或 OpenAI GPT Transcribe；雲端選項會上傳錄音並使用 OpenAI 額度。
 
         若未自動貼入，可按 ⌘V 或 Ctrl+V。快捷鍵請短按，不要長按。
         """
@@ -215,6 +224,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         guide.beginSheetModal(for: window)
     }
     @objc private func openSoundSettings() { onSoundSettings?() }
+    @objc private func openTranscriptionSettings() { onTranscriptionSettings?() }
     @objc private func openAPISettings() { onAPISettings?() }
     @objc private func quitApplication() { onQuit?() }
 

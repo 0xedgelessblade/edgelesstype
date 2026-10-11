@@ -334,7 +334,7 @@
         "Tests/OpenTypelessTests/CloudProviderTests.swift"
       ],
       "test_names": [
-        "testStructuredCorrectionAndPlainTranslationPayloads"
+        "testPlainCorrectionAndTranslationPayloads"
       ],
       "evidence": [
         "Official provider migration notice and local request-format fixtures."
@@ -405,6 +405,59 @@
       ],
       "evidence": "Core conversion and warning tests; in-memory paste test and native fixed-warning preview.",
       "limits": "Local script conversion is independent of cloud availability; a quota notice does not resolve provider limits."
+    },
+    {
+      "id": "correction-direct-full-text",
+      "title_en": "Direct full-text correction",
+      "title_zh": "直接採用完整校正文字",
+      "queries": [
+        "full text correction",
+        "remove content validation",
+        "完整校正全文",
+        "移除驗證限制"
+      ],
+      "article": "DEVELOPMENT.md#校正資料格式",
+      "source_files": [
+        "Sources/OpenTypelessCore/Vocabulary.swift",
+        "Sources/OpenTypeless/ContextCorrectionService.swift",
+        "Sources/OpenTypelessCore/OutputPolicy.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/FullTextCorrectionTests.swift"
+      ],
+      "test_names": [
+        "testFullReplyAllowsChangedLengthWordsAndPunctuation",
+        "testAllProvidersDeliverFullTextThroughNormalParsePath"
+      ],
+      "evidence": "Plain-text request fixtures, four-provider complete responses, empty/failed reply checks and local Traditional conversion.",
+      "limits": "No semantic equivalence guarantee; provider errors and truncation still fail. Legacy validators are not part of normal correction."
+    },
+    {
+      "id": "speech-openai-transcription-option",
+      "title_en": "Optional OpenAI first-stage transcription",
+      "title_zh": "選用 OpenAI 作為第一階段語音辨識",
+      "queries": [
+        "GPT transcript",
+        "gpt-transcribe",
+        "雲端語音辨識",
+        "Whisper OpenAI 切換"
+      ],
+      "article": "README.md#選擇第一階段語音辨識",
+      "source_files": [
+        "Sources/OpenTypelessCore/Transcription.swift",
+        "Sources/OpenTypeless/OpenAITranscriptionService.swift",
+        "Sources/OpenTypeless/TranscriptionSettingsWindow.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/TranscriptionTests.swift"
+      ],
+      "test_names": [
+        "testMissingSettingsDefaultToLocalAndNeverRunCloudClosure",
+        "testCloudCannotRunOrSaveWithoutExplicitConsent",
+        "testRealClientUsesMockTransportAndBlocksRedirects"
+      ],
+      "evidence": "Core router, consent, request/response and mock transport tests; isolated native settings UI.",
+      "limits": "No live API-account or private-recording test; cloud files are limited to 25 MB."
     }
   ]
 }

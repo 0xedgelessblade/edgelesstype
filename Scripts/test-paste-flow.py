@@ -28,6 +28,7 @@ final class ClipboardLease {
  @discardableResult func finish(confirmed: Bool) -> Bool { guard confirmed else { return false }; NSPasteboard.general.text = backup; NSPasteboard.general.changeCount += 1; Env.restores += 1; return true }
  func discard() {}
 }
+enum CorrectionRejection: String { case fixture; var explanation: String { "fixture" } }
 enum CloudError: String { case fixture; var errorDescription: String? { "fixture" } }
 struct SpeechContent { static func hasWords(_ text: String) -> Bool { !text.isEmpty } }
 func AXIsProcessTrusted() -> Bool { true }
@@ -107,6 +108,9 @@ tests=r'''
   Env.reset()
   do { let p=Paster(); p.offer("简体测试",into:123); tick(0.3)
    check(Env.editor.value=="簡體測試" && Env.posts==1,"final paste gate converts Simplified output before publishing") }
+  Env.reset()
+  do { let p=Paster(); p.offer("。",into:123,acceptModelText:true); tick(0.3)
+   check(Env.editor.value=="。" && Env.posts==1,"completed nonempty model text bypasses raw-speech content filtering") }
   print("PASS all paste lifecycle scenarios (in-memory OS, not a live Codex test)")
  }
 }

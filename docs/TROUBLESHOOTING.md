@@ -2,6 +2,8 @@
 
 For coding assistants: find the matching symptom, inspect the linked code, and run the listed test. These are scoped engineering findings, not universal fixes for every editor. Machine-readable lookup: [knowledge-index.json](knowledge-index.json).
 
+目前校正模式：模型回傳完整文字，程式只保留請求成功、回覆完整、非空白檢查及本機繁體轉換。同音、字典匹配、修改數量、原詞位置與標點內容比對已退出正常流程；下方提及 corrections／punctuated、validatedApply 或 rejected 的規則與案例為舊版歷史資料。
+
 ## Paste: AX setter false success
 
 **症狀 / search terms：** `AXSelectedText succeeds but no text appears`、AX 寫入回傳成功但文字沒進去、Hermes 自動貼入失敗。
@@ -189,3 +191,9 @@ The automatic and manual paste paths share the same destination readback. Only c
 校正失敗不再只記錄診斷：預覽顯示未校正提示，貼上後留下橘色「AI 校正未完成」面板，列出原因；額度／頻率限制使用精簡訊息「服務端額度不足或請求過於頻繁。請檢查服務商帳戶或稍後再試。」。其他校正失敗仍說明標點可能不完整。使用者關閉或開始下一次錄音後收起，不搶走焦點。翻譯失敗則顯示「翻譯未完成」，不輸出失敗結果。
 
 驗證：`OutputPolicyTests` 五項測試涵蓋簡轉繁、長文、中英混用及所有失敗原因；另有[模擬 OS 的 Paster 最終輸出入口測試](../Scripts/test-paste-flow.py)與固定 quota 原生畫面檢查。未為驗證而使用真實服務金鑰或傳送使用者文字。
+
+### Detailed validation rejection reasons
+
+Correction rejection now records a fixed `rejected:<reason>` status for invalid JSON, excessive changes, invalid source spans, unchanged replacements, disallowed replacements, invalid occurrences, missing source occurrences, and overlapping edits. The existing acceptance rules are preserved. The warning displays the specific reason in Traditional Chinese.
+
+The latest failure status is saved locally as `Config/last-correction-failure.json`, independently of later successful dictation. It contains only the fixed reason code, provider enum and timestamp; no transcript, model response, dictionary, or key. This runtime file must remain excluded from Git and exports. Historical generic `rejected` records cannot reveal which check failed.

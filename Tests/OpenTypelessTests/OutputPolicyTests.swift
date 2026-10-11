@@ -2,6 +2,38 @@ import XCTest
 @testable import OpenTypelessCore
 
 final class OutputPolicyTests: XCTestCase {
+    func testValidationFailuresHavePreciseReasonsWithoutAcceptingInvalidChanges() throws {
+        func response(_ changes: [[String: Any]]) throws -> String {
+            String(decoding: try JSONSerialization.data(withJSONObject: ["corrections": changes]), as: UTF8.self)
+        }
+        let valid: [String: Any] = ["from": "全線", "to": "權限", "occurrence": 1]
+        let cases: [(String, String, CorrectionRejection)] = [
+            ("{}", "全線", .invalidJSON),
+            (try response(Array(repeating: valid, count: 31)), "全線", .tooManyChanges),
+            (try response([["from": "全線。", "to": "權限", "occurrence": 1]]), "全線。", .invalidSource),
+            (try response([["from": "全線", "to": "全線", "occurrence": 1]]), "全線", .unchangedReplacement),
+            (try response([["from": "今天", "to": "刪除", "occurrence": 1]]), "今天", .disallowedReplacement),
+            (try response([["from": "全線", "to": "權限", "occurrence": 0]]), "全線", .invalidOccurrence),
+            (try response([valid]), "今天", .sourceNotFound),
+            (try response([valid, valid]), "全線", .overlappingChanges)
+        ]
+        for (json, text, expected) in cases {
+            switch ContextCorrection.validatedResult(response: json, to: text, entries: []) {
+            case .failure(let reason): XCTAssertEqual(reason, expected)
+            case .success: XCTAssertTrue(false)
+            }
+            XCTAssertNil(ContextCorrection.validatedApply(response: json, to: text, entries: []))
+        }
+        XCTAssertEqual(try ContextCorrection.validatedResult(response: response([valid]), to: "全線", entries: []).get(), "權限")
+    }
+
+    func testPreciseValidationWarningUsesOnlyFixedReasonText() {
+        for reason in CorrectionRejection.allCases {
+            XCTAssertEqual(OutputPolicy.correctionWarning(outcome: "rejected:" + reason.rawValue),
+                reason.explanation + "\n已保留繁體文字，標點可能不完整。")
+        }
+    }
+
     func testSimplifiedFallbackBecomesTraditionalLocally() throws {
         XCTAssertEqual(try OutputPolicy.traditional("简体中文测试，请检查网络连接和权限。"), "簡體中文測試，請檢查網絡連接和權限。")
     }

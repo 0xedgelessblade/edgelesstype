@@ -27,12 +27,15 @@ Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thin
 
 ## 校正資料格式
 
-校正回傳 `{"corrections":[{"from":"原詞","to":"正確詞","occurrence":1}],"punctuated":"校正後補標點的全文"}`。原生 JSON schema 要求兩個欄位；`punctuated` 可為 null，本機解析也相容舊回覆缺欄位。
+目前四家服務皆要求一般文字回覆：模型直接輸出完整校正文字，不再要求 corrections／punctuated JSON。輸入仍以 JSON 包裝 transcript 與字典資料，與回覆格式無關。
 
-四家服務共用 `ContextCorrection.draft` 的提示詞；`CloudWire` 只適配不同協定。先驗證詞語替換，再由 `SentencePunctuation` 驗證只插入標點、保留原文字和空白。勿因換模型而複製四套校正规則。
-`ContextCorrection.validatedApply` 是最後一道語意檢查：保留中英夾雜、限定原文位置、拒絕改寫全文。更換 API 不應繞過它。
+正式路徑為 `ContextCorrection.draft` → `CloudWire.parse` → `ContextCorrection.acceptFullText`。只確認 HTTP 請求成功、服務端標記完整完成、文字非空白，再透過 `OutputPolicy.traditional` 本機轉繁體。不比對同音、字典、原詞位置、修改數量、詞長、標點或句意。字典與保留原意要求只作為提示詞引導，不作拒絕回覆的規則。完成上下文校正後不再執行第二輪潤飾。
 
-錄音永遠交給本機 Whisper。雲端只有轉寫文字、字典和固定系統提示。
+`validatedApply`、`validatedResult` 與 `SentencePunctuation` 僅保留給歷史固定案例，不在正常校正或貼上流程中使用。勿將歷史驗證器重新接回正式路徑。
+
+一般文字輸出依據：[OpenAI Text generation](https://developers.openai.com/api/docs/guides/text)、[xAI output formats](https://docs.x.ai/developers/model-capabilities/text/structured-outputs)、[Claude Messages](https://platform.claude.com/docs/en/api/messages/create)、[Gemini output formats](https://ai.google.dev/gemini-api/docs/structured-output)。
+
+預設錄音交給本機 Whisper；明確同意後可選 OpenAI 音訊轉寫。文字校正與翻譯仍只接收文字、字典和固定提示。
 
 ## 官方介面依據
 
@@ -56,4 +59,10 @@ Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thin
 
 校正 draft 使用 `TimeInterval.infinity` 表示沒有應用程式期限；CloudClient 不對此模式執行有期限的 semaphore wait，且以大的有限值設定 URLSession 的 request/resource timeout，避免把 infinity 直接交給網路框架。翻譯與固定連線測試仍保留各自期限。
 
-`ContextCorrection.correctingChunks` 依序處理全文，保留段首尾空白與原文順序，每段都走 `validatedApply`；總長度不截斷。不可拆分的程式碼／網址可能超過一般分段大小。純測試涵蓋 9 秒回覆、長文完整性、技術片段、逗號加入及後段失敗；這不是雲端帳戶成功或標點品質保證。
+`ContextCorrection.correctingChunks` 依序處理全文，保留段首尾空白與原文順序，每段都直接採用模型完整文字並執行非空白檢查與繁體轉換；總長度不截斷。不可拆分的程式碼／網址可能超過一般分段大小。純測試涵蓋 9 秒回覆、長文完整性、技術片段、逗號加入及後段失敗；這不是雲端帳戶成功或標點品質保證。
+
+## Optional first-stage transcription
+
+`TranscriptionPreferences` defaults to local Whisper and validates explicit consent before any OpenAI route. `TranscriptionRouter` chooses exactly one backend; it never silently falls back to another provider. The OpenAI audio adapter sends `model=gpt-transcribe`, a fixed Traditional-Chinese prompt and a WAV file to `/v1/audio/transcriptions`. It uses the default JSON response with `text`, without legacy singular language hints or Responses-only parameters.
+
+The main controller snapshots the choice at recording start and uses it through processing. Cloud selection skips local model warm-up; both results enter the same full-text correction, Traditional conversion and paste pipeline. Use [official file-transcription docs](https://developers.openai.com/api/docs/guides/speech-to-text) when changing the model or multipart fields.

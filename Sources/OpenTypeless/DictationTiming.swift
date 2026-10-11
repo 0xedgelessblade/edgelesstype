@@ -17,5 +17,16 @@ struct DictationTiming: Codable {
     var metal = false
     var recordedAt = ""
 
+    func saveCorrectionFailure() {
+        guard !["not_requested", "corrected", "unchanged"].contains(correctionOutcome) else { return }
+        let status = ["outcome": correctionOutcome, "provider": correctionProvider ?? "unknown",
+                      "recordedAt": ISO8601DateFormatter().string(from: Date())]
+        let url = AppPaths.projectRoot().appendingPathComponent("Config/last-correction-failure.json")
+        if let data = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]) {
+            try? data.write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        }
+    }
+
     func elapsed() -> Double { Double(DispatchTime.now().uptimeNanoseconds - startedUptime)/1e9 }
 }
