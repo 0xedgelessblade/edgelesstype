@@ -4,6 +4,7 @@ import OpenTypelessCore
 final class Paster {
     var onDismiss: (() -> Void)?
     private(set) var isOffering = false
+    private(set) var lastInsertionConfirmed = false
     private var pendingText: String?
     private var targetPID: pid_t?
     private var targetElement: AXUIElement?
@@ -12,20 +13,47 @@ final class Paster {
     private var generation = UUID()
     private var verification: Timer?
     private var sending = false
+    private var manualQueued = false
+    private var diagnosticEvents: [String] = []
+
+    // Temporary local diagnosis: fixed stage names only, never text, clipboard
+    // contents, application titles, identifiers, or recordings. Bounded file.
+    private func trace(_ stage: String) {
+        guard diagnosticEvents.count < 64 else { return }
+        diagnosticEvents.append(stage)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-paste-diagnostic.json")
+        if let data = try? JSONSerialization.data(withJSONObject: diagnosticEvents) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
     private let clipboard = ClipboardLease()
+
+    init() {
+        trace(AXIsProcessTrusted() ? "startup_accessibility_trusted" : "startup_accessibility_not_trusted")
+    }
 
     func offer(_ text: String, into pid: pid_t?) {
         cancelOffer()
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        diagnosticEvents = []
+        lastInsertionConfirmed = false
+        trace("offer_started")
+        guard let traditional = try? OutputPolicy.traditional(text) else {
+            trace("traditional_conversion_failed")
+            return
+        }
+        let text = traditional.trimmingCharacters(in: .whitespacesAndNewlines)
         guard SpeechContent.hasWords(text) else { return }
         pendingText = text
         targetPID = pid
         isOffering = true
         let board = NSPasteboard.general
-        guard clipboard.publish(text) else { return }
+        guard clipboard.publish(text) else { trace("clipboard_publish_failed"); return }
         publishedCount = board.changeCount
-        guard AXIsProcessTrusted(), let pid,
-              let target = NSRunningApplication(processIdentifier: pid) else { return }
+        guard AXIsProcessTrusted() else { trace("accessibility_not_trusted"); return }
+        trace("accessibility_trusted")
+        guard let pid else { trace("target_pid_missing"); return }
+        guard let target = NSRunningApplication(processIdentifier: pid) else { trace("target_process_missing"); return }
+        trace(target.bundleIdentifier == "com.openai.codex" ? "target_is_codex" : "target_is_other")
         // Re-activating an already active Electron window can disturb focus.
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
             target.activate(options: [.activateIgnoringOtherApps])
@@ -36,14 +64,28 @@ final class Paster {
     private func waitForTarget(_ pid: pid_t, token: UUID, attempts: Int) {
         guard token == generation, isOffering else { return }
         if !sending, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-           let element = Self.focusedElement(in: pid) {
+           let element = Self.pasteTarget(in: pid) {
             targetElement = element
             before = Self.snapshot(element)
+            trace(before?.value == nil ? "target_found_value_unavailable" : "target_found_value_readable")
             sendPasteChord(token: token)
+        } else if !sending,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                  NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.openai.codex" {
+            // Observed Codex behavior: neither app nor system AX focus is
+            // exposed, while the ordinary Cmd-V responder path still works.
+            // Deliver once to the original foreground process, exactly as in
+            // manual recovery. No focus guessing, click, or AX text setter.
+            targetElement = nil
+            before = nil
+            trace("codex_opaque_foreground_fallback")
+            sendPasteChord(token: token, opaqueAutomatic: true)
         } else if attempts > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.waitForTarget(pid, token: token, attempts: attempts - 1)
             }
+        } else {
+            trace(NSWorkspace.shared.frontmostApplication?.processIdentifier == pid ? "focused_target_unavailable" : "foreground_target_mismatch")
         }
     }
 
@@ -51,14 +93,31 @@ final class Paster {
     /// pending paste. Never call AX APIs while holding an event-tap callback:
     /// the destination may need that very event loop to answer the request.
     func notePasteKey(controlOnly: Bool, fromUs: Bool) -> Bool {
-        guard isOffering, !fromUs, !sending,
+        guard isOffering, !fromUs,
               NSPasteboard.general.changeCount == publishedCount else { return false }
+        // Consume repeated/manual chords while one delivery is pending.
+        // Passing them through can paste a second copy before readback runs.
+        guard !sending, !manualQueued else { return true }
+        manualQueued = true
         let token = generation
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.generation == token, self.isOffering,
-                  let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+            guard let self, self.generation == token, self.isOffering else { return }
+            self.manualQueued = false
+            self.trace(controlOnly ? "manual_control_accepted" : "manual_command_accepted")
+            guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+            // Automatic delivery may have completed just before this manual
+            // request. Check its original baseline before replacing it.
+            if self.targetPID == pid, self.insertionConfirmed() {
+                self.lastInsertionConfirmed = true
+                self.clipboard.finish(confirmed: true)
+                self.cancelOffer()
+                self.onDismiss?()
+                return
+            }
+            self.verification?.invalidate()
+            self.verification = nil
             self.targetPID = pid
-            self.targetElement = Self.focusedElement(in: pid)
+            self.targetElement = Self.pasteTarget(in: pid)
             self.before = self.targetElement.map(Self.snapshot)
             self.sendPasteChord(token: token, manual: true)
         }
@@ -70,6 +129,7 @@ final class Paster {
         verification?.invalidate()
         verification = nil
         isOffering = false
+        manualQueued = false
         pendingText = nil
         targetElement = nil
         before = nil
@@ -78,7 +138,7 @@ final class Paster {
         clipboard.discard()
     }
 
-    private func sendPasteChord(token: UUID, manual: Bool = false) {
+    private func sendPasteChord(token: UUID, manual: Bool = false, opaqueAutomatic: Bool = false) {
         guard !sending, token == generation, let pid = targetPID,
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
               NSPasteboard.general.changeCount == publishedCount,
@@ -87,11 +147,17 @@ final class Paster {
               let down = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false),
               let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false) else { return }
+        if opaqueAutomatic {
+            guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.openai.codex",
+                  targetElement == nil else { return }
+        }
         if let element = targetElement {
-            guard let focused = Self.focusedElement(in: pid), CFEqual(element, focused) else { return }
-        } else if !manual {
+            guard let focused = Self.pasteTarget(in: pid), CFEqual(element, focused) else { trace("focus_changed_before_send"); return }
+        } else if !manual && !opaqueAutomatic {
+            trace("automatic_target_missing_before_send")
             return
         }
+        trace(manual ? "manual_chord_sent" : "automatic_chord_sent")
         sending = true
         for event in [commandDown, down, up, commandUp] {
             event.setIntegerValueField(.eventSourceUserData, value: 7941)
@@ -113,7 +179,14 @@ final class Paster {
             guard let self else { return }
             self.sending = false
             guard self.generation == token else { return }
-            self.startVerification(token: token)
+            if manual || opaqueAutomatic {
+                // Opaque Codex delivery has no readable insertion evidence.
+                // Close the preview after the single chord, retain dictated
+                // clipboard text, and record delivery rather than confirmation.
+                self.finishManualPaste(manual: manual)
+            } else {
+                self.startVerification(token: token)
+            }
         }
     }
 
@@ -125,12 +198,14 @@ final class Paster {
                 timer.invalidate()
                 return
             }
-            if let element = self.targetElement, let before = self.before, let text = self.pendingText,
-               PasteConfirmation.confirms(text, before: before, after: Self.snapshot(element)) {
+            if self.insertionConfirmed() {
+                self.trace("automatic_insertion_confirmed")
+                self.lastInsertionConfirmed = true
                 self.clipboard.finish(confirmed: true)
                 self.cancelOffer()
                 self.onDismiss?()
             } else if Date() >= deadline {
+                self.trace("automatic_confirmation_timeout")
                 // Do not retry automatically: delayed/opaque editors could
                 // receive the same sentence twice. Leave manual paste ready.
                 timer.invalidate()
@@ -139,42 +214,86 @@ final class Paster {
         }
     }
 
-    static func focusedElement(in pid: pid_t, messagingTimeout: Float = 0.2) -> AXUIElement? {
+    private func insertionConfirmed() -> Bool {
+        targetElement.flatMap { element in
+            before.flatMap { old in pendingText.map {
+                PasteConfirmation.confirms($0, before: old, after: Self.snapshot(element))
+            }}
+        } ?? false
+    }
+
+    private func finishManualPaste(manual: Bool) {
+        trace(manual ? "manual_preview_dismissed" : "opaque_automatic_preview_dismissed")
+        lastInsertionConfirmed = insertionConfirmed()
+        if lastInsertionConfirmed { clipboard.finish(confirmed: true) }
+        cancelOffer()
+        onDismiss?()
+    }
+
+    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+        return value
+    }
+
+    private static func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
+        guard let value = attribute(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private static func rawFocus(in pid: pid_t, messagingTimeout: Float = 0.2) -> AXUIElement? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, messagingTimeout)
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
-        let anchor = focused as! AXUIElement
-        AXUIElementSetMessagingTimeout(anchor, messagingTimeout)
-        func editable(_ element: AXUIElement) -> AXUIElement? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, messagingTimeout)
+        let focus = elementAttribute(app, kAXFocusedUIElementAttribute)
+            ?? elementAttribute(system, kAXFocusedUIElementAttribute)
+        guard let focus else { return nil }
+        var owner: pid_t = 0
+        guard AXUIElementGetPid(focus, &owner) == .success, owner == pid else { return nil }
+        AXUIElementSetMessagingTimeout(focus, messagingTimeout)
+        guard attribute(focus, kAXSubroleAttribute) as? String != kAXSecureTextFieldSubrole else { return nil }
+        return focus
+    }
+
+    private static func pasteTarget(in pid: pid_t) -> AXUIElement? {
+        if let editor = focusedElement(in: pid) { return editor }
+        // Codex may expose a focused wrapper instead of its editable child.
+        // Cmd-V still goes through the target app's normal responder chain.
+        // Require the same foreground PID and AX focus immediately before
+        // delivery; never click the wrapper or infer successful insertion.
+        guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.openai.codex" else { return nil }
+        return rawFocus(in: pid)
+    }
+
+    static func focusedElement(in pid: pid_t, messagingTimeout: Float = 0.2) -> AXUIElement? {
+        guard let anchor = rawFocus(in: pid, messagingTimeout: messagingTimeout) else { return nil }
+        var visited: [AXUIElement] = []
+        func resolve(_ element: AXUIElement, depth: Int) -> AXUIElement? {
+            guard depth < 6, visited.count < 16,
+                  !visited.contains(where: { CFEqual($0, element) }) else { return nil }
+            visited.append(element)
             AXUIElementSetMessagingTimeout(element, messagingTimeout)
-            var role: CFTypeRef?
-            var subrole: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-            AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
-            guard [kAXTextAreaRole, kAXTextFieldRole, kAXComboBoxRole].contains(role as? String ?? ""),
-                  subrole as? String != kAXSecureTextFieldSubrole else { return nil }
-            return element
-        }
-        func editableAncestor(_ element: AXUIElement) -> AXUIElement? {
-            for name in ["AXEditableAncestor", "AXHighestEditableAncestor"] {
-                var value: CFTypeRef?
-                if AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
-                   let value, CFGetTypeID(value) == AXUIElementGetTypeID(),
-                   let result = editable(value as! AXUIElement) { return result }
+            var owner: pid_t = 0
+            guard AXUIElementGetPid(element, &owner) == .success, owner == pid,
+                  attribute(element, kAXSubroleAttribute) as? String != kAXSecureTextFieldSubrole else { return nil }
+            let role = attribute(element, kAXRoleAttribute) as? String ?? ""
+            if [kAXTextAreaRole, kAXTextFieldRole, kAXComboBoxRole].contains(role) { return element }
+            // Follow focus/selection relationships only; never search sibling
+            // fields or chat history, and never activate a button wrapper.
+            for name in [kAXFocusedUIElementAttribute, "AXEditableAncestor", "AXHighestEditableAncestor"] {
+                if let linked = elementAttribute(element, name), let result = resolve(linked, depth: depth + 1) { return result }
+            }
+            if let caret = WebKitFocus.selectionElement(in: element),
+               let result = resolve(caret, depth: depth + 1) { return result }
+            // A caret may be a static text leaf inside an editable parent.
+            if [kAXStaticTextRole, kAXGroupRole].contains(role),
+               let parent = elementAttribute(element, kAXParentAttribute) {
+                return resolve(parent, depth: depth + 1)
             }
             return nil
         }
-        if let direct = editable(anchor) { return direct }
-        if let ancestor = editableAncestor(anchor) { return ancestor }
-        // Muse/WebKit hides the contenteditable from AXChildren and reports a
-        // button wrapper as focus. Its selected text marker still identifies
-        // the actual caret node and that node's editable ancestor. No button
-        // action, DOM scan, chat-history read, or direct AX text write is used.
-        guard let caret = WebKitFocus.selectionElement(in: anchor) else { return nil }
-        AXUIElementSetMessagingTimeout(caret, messagingTimeout)
-        return editable(caret) ?? editableAncestor(caret)
+        return resolve(anchor, depth: 0)
     }
 
     static func snapshot(_ element: AXUIElement) -> PasteSnapshot {
@@ -191,6 +310,19 @@ final class Paster {
                 selection = NSRange(location: range.location, length: range.length)
             }
         }
-        return PasteSnapshot(value: value as? String, selection: selection)
+        var text = (value as? String) ?? (value as? NSAttributedString)?.string
+        if text == nil,
+           let count = attribute(element, kAXNumberOfCharactersAttribute) as? NSNumber,
+           count.intValue >= 0, count.intValue <= 1_000_000 {
+            var fullRange = CFRange(location: 0, length: count.intValue)
+            if let range = AXValueCreate(.cfRange, &fullRange) {
+                var result: CFTypeRef?
+                if AXUIElementCopyParameterizedAttributeValue(element, kAXStringForRangeParameterizedAttribute as CFString,
+                                                               range, &result) == .success {
+                    text = result as? String
+                }
+            }
+        }
+        return PasteSnapshot(value: text, selection: selection)
     }
 }

@@ -28,7 +28,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **判斷：** 在開發時觀察到，游標明明位於 Muse 訊息欄，焦點 AX 物件卻是 `AXButton`，其 value 也不是實際草稿。只接受 `AXTextArea` 的程式會找不到目標。不能因為 wrapper 帶有「傳送」名稱就去執行按鈕動作。
 
-**本專案解法：** 依序檢查直接可編輯元件、editable ancestor，再嘗試以選取文字標記找出游標所在元件和其可編輯祖先。正常路徑不掃描整段聊天，不點傳送按鈕，不直接寫 AX 選取文字。
+**本專案解法：** 依序檢查直接可編輯元件、editable ancestor，再嘗試以選取文字標記找出游標所在元件和其可編輯祖先。正常路徑不掃描整段聊天，不點傳送按鈕，不直接寫 AX 選取文字。亦沿著巢狀 focus 與文字葉節點的 parent 尋找 editor，限制深度與節點數並排除循環。當 Codex 僅暴露焦點 wrapper，允許向相同前景程序、相同焦點投遞一次 Cmd+V；若完全不提供 AX 焦點，則限 Codex 仍為原本前景程序時投遞一次 Cmd+V。wrapper 或按鍵送出不是已插入的證據。讀回另支援 attributed value 與 AXStringForRange。本機階段診斷已確認 Codex 缺少 AX 焦點、手動按鍵路徑可用。使用者已在實際 Codex 輸入框確認自動貼上與收框成功；本機狀態亦記錄一次自動按鍵投遞及收框。手動貼上後收框也已由使用者確認。此證據限當次使用者環境，不代表其他版本或所有輸入欄位皆相容。
 
 **程式與驗證：** [WebKitFocus](../Sources/OpenTypeless/WebKitFocus.swift)、[Paster.focusedElement](../Sources/OpenTypeless/Paster.swift)。手動把游標放在可丟棄的空白輸入欄後，執行 `focus-probe <bundle-id> --summary`，只觀察是否解析出 editor 和字數。
 
@@ -52,7 +52,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **判斷：** 手動按鍵和自動貼入若走兩條不同的確認路徑，提示框可能不知道文字已進去。另一個陷阱是在 event-tap callback 裡同步等待 AX 查詢，阻擋了目標處理同一個事件所需的流程。
 
-**本專案解法：** callback 只做必要判斷並迅速返回；延後到主佇列重新解析焦點、取得快照、投遞貼上與驗證。以事件標記排除自己送出的鍵，並確認剪貼簿尚未被使用者換成別的內容。
+**本專案解法：** callback 只做必要判斷並迅速返回；延後到主佇列重新解析焦點、取得快照、投遞貼上與驗證。以事件標記排除自己送出的鍵，並確認剪貼簿尚未被使用者換成別的內容。使用者明確按下手動貼上後，送完按鍵即收起提示框；此動作是使用者確認收起，不宣稱貼入成功。只有讀回證實插入才還原舊剪貼簿；否則保留語音文字供再次手動貼上。一般自動貼上須讀回確認才收起；Codex 無 AX 焦點的替代路徑在單次按鍵送完後收起，保留語音剪貼簿，並將結果記為未讀回確認，不記錄成已確認貼入耗時。
 
 **程式與驗證：** [HotkeyMonitor](../Sources/OpenTypeless/main.swift)、[Paster.notePasteKey](../Sources/OpenTypeless/Paster.swift)。開發測試命令有 `paste-probe <bundle-id> manual-command` 和 `manual-control`，只貼固定句、不按 Enter。輸入欄應由測試者先聚焦；不要自動點疑似傳送按鈕。
 
@@ -130,15 +130,15 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 ## Speech: missing sentence punctuation
 
-**症狀 / search terms：** missing punctuation、no commas or periods、整段沒有標點、Chinese mixed English dictation。
+**症狀 / search terms：** missing punctuation、no commas or periods、整段沒有標點、長文逗點消失、Chinese mixed English dictation。
 
 **原因：** ASR 未產生標點，而後處理只允許詞語替換（舊提示詞還明確禁止補標點），就沒有步驟能恢復斷句。空白／純標點攔截本身不會刪除句中標點。
 
-**解法：** 在同一次上下文校正加入 `punctuated`；原生 JSON schema 要求該欄位存在並允許 null，本機解析仍相容舊回覆缺欄位。先驗證詞語修正，再驗證僅插入句讀標點。模型若在新增逗號處省略原有空格，本機先補回原空格；其他空白變動不接受。非法改寫保留合法詞語修正。無文字仍不請求、不貼上。提示詞維持 550 字元限制。
+**解法：** 在同一次上下文校正加入 `punctuated`；原生 JSON schema 要求該欄位存在並允許 null，本機解析仍相容舊回覆缺欄位。先驗證詞語修正，再驗證僅插入句讀標點。模型若在新增逗號處省略原有空格，本機先補回原空格；其他空白變動不接受。非法改寫保留合法詞語修正。無文字仍不請求、不貼上。提示詞維持 550 字元限制。移除校正原先 4 秒／8 秒的應用程式期限；CloudClient 等待完成或實際網路／服務端錯誤。長文以約 1200 字元分段，優先句界，保留技術詞、網址與程式碼完整；每段仍經相同詞語與標點驗證，最後一次合併貼入。總長度不因分段而截斷。
 
 **程式與驗證：** [SentencePunctuation](../Sources/OpenTypelessCore/SentencePunctuation.swift)、[tests](../Tests/OpenTypelessTests/SentencePunctuationTests.swift)。固定雲端測試入口：`correction-probe --punctuation`，只使用公開測試句。
 
-**限制：** 補標點需啟用上下文校正與有效 API。離線、逾時或模型沒有給出合法結果時保留原轉寫；驗證器能限制改寫，不能證明語意斷句一定正確。
+**限制：** 補標點需啟用上下文校正與有效 API。服務端額度／頻率限制、網路錯誤或非法結果仍會保留原轉寫；移除本機短期限不能解除這些錯誤。URLSession 使用極大的有限傳輸期間，應用程式本身不設校正等待期限。每次服務回覆仍有 token 上限；單一不可分割的極長程式碼／網址仍可能超限。驗證器能限制改寫，不能證明語意斷句一定正確。
 
 API schema 參考：[OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)、[Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)、[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)。四家服務共用 `ContextCorrection.draft` 提示詞，只有協定轉接層依供應商分開。
 
@@ -181,3 +181,11 @@ The automatic and manual paste paths share the same destination readback. Only c
 ## Recording readiness
 
 `recording-ready-probe` explicitly opens the microphone for three short cycles. Each cue follows the first saved audio buffer. It checks repeated capture/stop without ASR or cloud calls, then deletes the files. It does not test recognition accuracy or noise rejection. The opt-in `cue-cycle-probe` remains a diagnostic for cue hallucinations and is not a promised passing test in this release.
+
+## Output: Traditional Chinese and visible correction failures
+
+語音辨識原文、模型結果、翻譯中的中文、預覽與 Paster 剪貼簿入口使用 `OutputPolicy.traditional`，透過本機 Hans-Hant 轉換輸出繁體中文。轉換失敗不回退輸出原字串。此規則也套用網路錯誤、額度／頻率限制、校正停用時的轉寫結果。英文、ASCII 程式碼、網址及空白維持不變；中文出現在技術內容中仍依使用者的繁體輸出要求轉換。
+
+校正失敗不再只記錄診斷：預覽顯示未校正提示，貼上後留下橘色「AI 校正未完成」面板，列出原因；額度／頻率限制使用精簡訊息「服務端額度不足或請求過於頻繁。請檢查服務商帳戶或稍後再試。」。其他校正失敗仍說明標點可能不完整。使用者關閉或開始下一次錄音後收起，不搶走焦點。翻譯失敗則顯示「翻譯未完成」，不輸出失敗結果。
+
+驗證：`OutputPolicyTests` 五項測試涵蓋簡轉繁、長文、中英混用及所有失敗原因；另有[模擬 OS 的 Paster 最終輸出入口測試](../Scripts/test-paste-flow.py)與固定 quota 原生畫面檢查。未為驗證而使用真實服務金鑰或傳送使用者文字。

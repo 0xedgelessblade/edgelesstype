@@ -24,6 +24,8 @@ jobs:
         run: test "$(uname -m)" = arm64
       - name: Core tests (no API keys)
         run: python3 Scripts/test-core.py
+      - name: Paste lifecycle (in-memory OS)
+        run: python3 Scripts/test-paste-flow.py
       - name: Documentation references
         run: python3 Scripts/check-docs.py
       - name: Build locally signed app

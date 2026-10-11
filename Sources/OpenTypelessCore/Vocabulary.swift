@@ -97,12 +97,63 @@ public enum ContextCorrection {
     private struct Response: Decodable { var corrections: [Correction]; var punctuated: String? }
     private struct Correction: Decodable { var from: String; var to: String; var occurrence: Int }
 
+    /// Bound each response, not the total dictation length. Preserve every
+    /// character, prefer sentence boundaries, and keep technical spans intact.
+    public static func chunks(_ text: String, maximumLength: Int = 1200) -> [String] {
+        guard !text.isEmpty else { return [] }
+        let limit = max(1, maximumLength)
+        let chars = Array(text)
+        var offsets = [0]
+        for char in chars { offsets.append(offsets.last! + String(char).utf16.count) }
+        let pattern = #"`[^`]*`|(?:https?://|www\.)[^\s，。！？；]+|[\w.+-]+@[\w.-]+|(?:~?/|\./)[^\s，。！？；]+"#
+        let regex = try! NSRegularExpression(pattern: pattern)
+        let protected = regex.matches(in: text, range: NSRange(location: 0, length: offsets.last!)).map(\.range)
+        let boundaries = Set("。！？；.!?;\n")
+        var result: [String] = [], start = 0
+        while start < chars.count {
+            var end = min(start + limit, chars.count)
+            if end < chars.count {
+                let lower = start + max(1, (end - start) / 2)
+                if let boundary = (lower..<end).reversed().first(where: { boundaries.contains(chars[$0]) }) {
+                    end = boundary + 1
+                } else if let space = (lower..<end).reversed().first(where: { chars[$0].isWhitespace }) {
+                    end = space + 1
+                }
+                func asciiToken(_ char: Character) -> Bool {
+                    char.unicodeScalars.allSatisfy { $0.isASCII && !CharacterSet.whitespacesAndNewlines.contains($0) }
+                }
+                while end < chars.count, asciiToken(chars[end - 1]), asciiToken(chars[end]) { end += 1 }
+                if let span = protected.first(where: { offsets[end] > $0.location && offsets[end] < NSMaxRange($0) }) {
+                    while end < chars.count, offsets[end] < NSMaxRange(span) { end += 1 }
+                }
+            }
+            result.append(String(chars[start..<end]))
+            start = end
+        }
+        return result
+    }
+
+    /// Preserve boundary whitespace outside model output. Do not return a
+    /// partial paragraph if a later chunk fails validation or transport.
+    public static func correctingChunks(_ text: String, complete: (String) throws -> String) rethrows -> String {
+        var results: [String] = []
+        for chunk in chunks(text) {
+            let leading = chunk.prefix(while: { $0.isWhitespace })
+            let rest = chunk.dropFirst(leading.count)
+            let trailing = rest.reversed().prefix(while: { $0.isWhitespace }).reversed()
+            let body = String(rest.dropLast(trailing.count))
+            if body.isEmpty { results.append(chunk) }
+            else { results.append(String(leading) + (try complete(body)) + String(trailing)) }
+        }
+        return results.joined()
+    }
+
     public static func candidates(in text: String, settings: VocabularySettings) -> [VocabularyEntry] {
         guard settings.contextCorrectionEnabled, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
         return settings.entries
     }
 
-    public static func draft(text: String, entries: [VocabularyEntry], model: String, timeout: TimeInterval = 4) throws -> ChatBody {
+    public static func draft(text: String, entries: [VocabularyEntry], model: String, timeout: TimeInterval = .infinity) throws -> ChatBody {
         let data = try JSONEncoder().encode(Payload(transcript: text, vocabulary: entries.map(PromptEntry.init)))
         var body = ChatBody(model: model, timeoutSeconds: timeout, reasoningEffort: nil, system: """
         你是中英夾雜的語音轉寫校正器。依語境修正中文同音錯字、常用詞、成語與固定搭配，不限字典；字典協助專有名詞，不硬套。孤立歧義詞不猜。

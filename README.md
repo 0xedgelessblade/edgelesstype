@@ -4,7 +4,7 @@
 
 **Open-source voice dictation for Apple silicon Macs.** Local Whisper recognition, optional text-only LLM correction, and verified insertion into supported input fields.
 
-公開作者：[edgelessblade](https://github.com/0xedgelessblade) · [MIT License](LICENSE) · [引用資訊](CITATION.cff)
+公開作者：[edgelessblade](https://github.com/0xedgelessblade) · [MIT License](LICENSE) · [引用資訊](CITATION.cff) · [更新日誌 / Changelog](CHANGELOG.md)
 
 給 **Apple Silicon M 系列 Mac、macOS 26 以上**使用的開源語音輸入 App。
 錄音與 Whisper 語音辨識留在本機；可選擇自己的 API 金鑰，做上下文校正和中翻英。

@@ -9,7 +9,7 @@ import subprocess
 import zipfile
 
 root = Path(__file__).resolve().parent.parent
-TOP_FILES = ['Package.swift', '.gitignore', 'README.md', 'AGENTS.md', 'LICENSE', 'SECURITY.md', 'DEVELOPMENT.md', 'CONTRIBUTING.md', 'CITATION.cff', 'llms.txt', '打開 edgelesstype.command']
+TOP_FILES = ['Package.swift', '.gitignore', 'README.md', 'CHANGELOG.md', 'AGENTS.md', 'LICENSE', 'SECURITY.md', 'DEVELOPMENT.md', 'CONTRIBUTING.md', 'CITATION.cff', 'llms.txt', '打開 edgelesstype.command']
 DIRECTORIES = ['Sources', 'Tests', 'Scripts', 'Resources', 'Patches', '.github', 'docs']
 CONFIG = ['Config/app.example.json', 'Config/dictionary-seed.json']
 def public_files():

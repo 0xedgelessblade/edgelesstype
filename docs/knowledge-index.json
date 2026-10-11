@@ -379,6 +379,32 @@
       "limits": [
         "Current native recording begins on Fn, before its cue. No echo cancellation or prefix trimming is enabled. Cue echoes and background voices may pass VAD. Noise-free output is not guaranteed; earlier delayed-capture user results do not validate this version."
       ]
+    },
+    {
+      "id": "output-traditional-and-correction-warning",
+      "title_en": "Traditional output and visible correction failure",
+      "title_zh": "繁體輸出與校正失敗提示",
+      "queries": [
+        "Simplified Chinese fallback",
+        "簡體中文",
+        "quota 提示",
+        "校正未完成"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#output-traditional-chinese-and-visible-correction-failures",
+      "source_files": [
+        "Sources/OpenTypelessCore/OutputPolicy.swift",
+        "Sources/OpenTypeless/RecordChrome.swift",
+        "Sources/OpenTypeless/Paster.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/OutputPolicyTests.swift"
+      ],
+      "test_names": [
+        "testSimplifiedFallbackBecomesTraditionalLocally",
+        "testEveryFailureWarnsAndSuccessDoesNot"
+      ],
+      "evidence": "Core conversion and warning tests; in-memory paste test and native fixed-warning preview.",
+      "limits": "Local script conversion is independent of cloud availability; a quota notice does not resolve provider limits."
     }
   ]
 }

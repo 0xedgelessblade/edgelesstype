@@ -15,3 +15,5 @@ API 金鑰使用 AES-256-GCM 保存於 `private/store.encrypted.json`。本機�
 此設計防範分享專案時連帶洩漏，並非對抗已控制同一使用者帳戶的程式：若同時取得密文及本機解密鑰匙，便可能讀出 API 金鑰。App「刪除金鑰」只移除本機紀錄；撤銷 API 權限須到服務商操作。
 
 Clipboard restoration keeps a bounded, temporary copy of prior pasteboard items in memory only. It is not written to disk or sent to an API. The copy is released when an offer succeeds or is cancelled. Restoration requires confirmed insertion and unchanged pasteboard ownership; large or incomplete snapshots are not restored.
+
+Paste diagnostics write at most 64 fixed stage labels for the latest offer to a local temporary file. They contain no transcript, clipboard contents, window titles, keys, or arbitrary application identifiers. They are not transmitted and must not be included in public exports or issue attachments.

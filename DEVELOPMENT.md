@@ -51,3 +51,9 @@ Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thin
 `Config/last-latency.json` 可記錄校正是 corrected、unchanged、rejected、timeout 等狀態，只有狀態與計時，沒有錄音或文字。此檔不公開。
 
 `correction-probe` 是可選的真實 API 測試，會用目前選用服務商與已儲存金鑰，送出程式內固定範例與字典並消耗額度；不要在沒有使用者授權時執行。一般回歸測試不會連線。
+
+## 長文校正與等待
+
+校正 draft 使用 `TimeInterval.infinity` 表示沒有應用程式期限；CloudClient 不對此模式執行有期限的 semaphore wait，且以大的有限值設定 URLSession 的 request/resource timeout，避免把 infinity 直接交給網路框架。翻譯與固定連線測試仍保留各自期限。
+
+`ContextCorrection.correctingChunks` 依序處理全文，保留段首尾空白與原文順序，每段都走 `validatedApply`；總長度不截斷。不可拆分的程式碼／網址可能超過一般分段大小。純測試涵蓋 9 秒回覆、長文完整性、技術片段、逗號加入及後段失敗；這不是雲端帳戶成功或標點品質保證。

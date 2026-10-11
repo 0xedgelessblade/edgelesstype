@@ -1,4 +1,5 @@
 import AppKit
+import OpenTypelessCore
 
 private final class RecordingPanel: NSPanel {
     override var canBecomeKey: Bool { false }
@@ -19,6 +20,7 @@ final class RecordChrome {
     private let pill = PillView(frame: NSRect(x: 0, y: 0, width: 168, height: 36))
     private var waveTimer: Timer?
     private var phase = 0.0
+    private var pendingWarning: String?
 
     init() {
         panel.level = .floating
@@ -35,6 +37,7 @@ final class RecordChrome {
     }
 
     func showRecording() {
+        pendingWarning = nil
         pill.mode = .recording
         panel.ignoresMouseEvents = false
         startWave()
@@ -43,6 +46,7 @@ final class RecordChrome {
     }
 
     func showWorking() {
+        pendingWarning = nil
         pill.mode = .working
         panel.ignoresMouseEvents = true
         startWave()
@@ -50,8 +54,14 @@ final class RecordChrome {
         panel.orderFrontRegardless()
     }
 
-    func showPending(_ text: String) {
+    func showPending(_ text: String, warning: String? = nil) {
+        guard let text = try? OutputPolicy.traditional(text) else {
+            showWarning(OutputConversionError.unavailable.errorDescription ?? "繁體中文轉換失敗。", title: "文字未輸出")
+            return
+        }
         stopWave()
+        pendingWarning = warning
+        pill.pendingHint = warning == nil ? "文字已備妥；若未出現，請按 ⌘V 貼上。" : "AI 校正未完成；文字仍可貼上，詳情將保留顯示。"
         pill.mode = .pending(text)
         panel.ignoresMouseEvents = false
         place(width: 420, height: 96)
@@ -59,6 +69,7 @@ final class RecordChrome {
     }
 
     func showMessage(_ text: String) {
+        pendingWarning = nil
         stopWave()
         pill.mode = .message(text)
         panel.ignoresMouseEvents = true
@@ -67,7 +78,22 @@ final class RecordChrome {
         panel.orderFrontRegardless()
     }
 
+    func dismissPending() {
+        if let warning = pendingWarning { showWarning(warning) }
+        else { hide() }
+    }
+
+    func showWarning(_ text: String, title: String = "AI 校正未完成") {
+        pendingWarning = nil
+        stopWave()
+        pill.mode = .warning(title, text)
+        panel.ignoresMouseEvents = false
+        place(width: 500, height: 140)
+        panel.orderFrontRegardless()
+    }
+
     func hide() {
+        pendingWarning = nil
         stopWave()
         panel.orderOut(nil)
     }
@@ -103,9 +129,11 @@ final class PillView: NSView {
         case recording
         case working
         case pending(String)
+        case warning(String, String)
         case message(String)
     }
 
+    var pendingHint = "文字已備妥；若未出現，請按 ⌘V 貼上。"
     var mode: Mode = .recording
     var phase = 0.0
     var onCancel: (() -> Void)?
@@ -133,19 +161,26 @@ final class PillView: NSView {
             (text as NSString).draw(at: point, withAttributes: attrs)
         case .pending(let text):
             drawPending(text)
+        case .warning(let title, let text):
+            let heading: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.systemOrange]
+            (title as NSString).draw(at: NSPoint(x: 16, y: bounds.height - 32), withAttributes: heading)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byWordWrapping
+            let detail: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white, .paragraphStyle: paragraph]
+            (text as NSString).draw(in: NSRect(x: 16, y: 12, width: bounds.width - 44, height: bounds.height - 54), withAttributes: detail)
+            drawX(in: pendingCloseRect.insetBy(dx: 5, dy: 5))
         case .recording, .working:
             drawControls()
         }
     }
 
     private var isPending: Bool {
-        if case .pending = mode { return true }
-        return false
+        switch mode { case .pending, .warning: return true; default: return false }
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if case .pending = mode {
+        if isPending {
             if pendingCloseRect.contains(point) {
                 onCancel?()
             }
@@ -174,7 +209,7 @@ final class PillView: NSView {
             .foregroundColor: NSColor(calibratedWhite: 0.72, alpha: 1)
         ]
         (shown as NSString).draw(at: NSPoint(x: 16, y: 52), withAttributes: body)
-        ("文字已備妥；若未出現，請按 ⌘V 貼上。" as NSString).draw(at: NSPoint(x: 16, y: 28), withAttributes: hint)
+        (pendingHint as NSString).draw(at: NSPoint(x: 16, y: 28), withAttributes: hint)
         drawX(in: pendingCloseRect.insetBy(dx: 5, dy: 5))
     }
 

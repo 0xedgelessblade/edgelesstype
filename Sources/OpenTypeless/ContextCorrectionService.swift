@@ -8,12 +8,15 @@ enum ContextCorrectionService {
         let entries = ContextCorrection.candidates(in: text, settings: settings)
         guard settings.contextCorrectionEnabled, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         let provider = try CloudAccess.preferences.load().provider
-        let body = try ContextCorrection.draft(text: text, entries: entries, model: provider.model(for: .correction), timeout: provider.correctionTimeoutSeconds)
-        let response = try CloudAccess.complete(body, purpose: .correction)
-        guard let result = ContextCorrection.validatedApply(response: response, to: text, entries: entries) else {
-            throw ContextCorrectionOutputError.rejected(response)
+        return try ContextCorrection.correctingChunks(text) { chunk in
+            let body = try ContextCorrection.draft(text: chunk, entries: entries,
+                model: provider.model(for: .correction), timeout: provider.correctionTimeoutSeconds)
+            let response = try CloudAccess.complete(body, purpose: .correction)
+            guard let result = ContextCorrection.validatedApply(response: response, to: chunk, entries: entries) else {
+                throw ContextCorrectionOutputError.rejected(response)
+            }
+            return result
         }
-        return result
     }
 
     static func probe(onlyProtest: Bool = false, onlyPunctuation: Bool = false) -> Int32 {

@@ -17,9 +17,9 @@ This is an evidence ledger, not a claim that every field in an application is su
 
 ## Current validation snapshot
 
-文件整理日期：2026-10-10。當前開發驗證機為 Apple Silicon、macOS 26.5.2。
+文件整理日期：2026-10-11。當前開發驗證機為 Apple Silicon、macOS 26.5.2。
 
-- 69 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定。
+- 80 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定，另涵蓋長文分段完整性及 9 秒校正回覆等待。
 - 先前延後收音版本：本機 Small／Turbo 人聲偵測合成測試共 18 項通過，含保留短字與小聲語句；兩種輸入模式的無人聲路徑皆未碰剪貼簿或雲端。此測試不使用真實麥克風。另由使用者在喇叭播放提示音的實際環境確認：不說話時不貼字且提示框消失，真正說「謝謝」仍能貼入。
 - 獨立解壓公開來源 ZIP 後，測試和 App 建置通過。
 - 重新建置的本機引擎以 Small 與 Turbo 轉寫公開測試音檔成功。
@@ -37,6 +37,7 @@ This is an evidence ledger, not a claim that every field in an application is su
 
 ```sh
 python3 Scripts/test-core.py
+python3 Scripts/test-paste-flow.py
 python3 Scripts/check-docs.py
 bash Scripts/pack-app.sh
 ./edgelesstype.app/Contents/MacOS/edgelesstype self-check
@@ -49,12 +50,12 @@ python3 Scripts/public-check.py --app-only
 
 - 不支援 Intel Mac、Windows 或 Linux。
 - AX text-marker runtime symbols 和目標 App 的可及性樹可能改變。
-- 若 AX value 不可讀，實際貼入可能成功而提示框仍未得到足夠證據。
+- 若 AX value 不可讀，無法以讀回確認插入。Codex 專用替代路徑會在單次按鍵投遞後收框並保留剪貼簿，但不將其記錄為已確認插入。
 - 缺少選取範圍時的出現次數比對是較弱證據，不能證明完全正確的位置或沒有額外文字。
 - 主動 focus 變動、剪貼簿被其他操作更換、權限不足時，不應自動重試貼入。
 - Core CI 不會錄音、替使用者點擊輸入框、測試完整桌面 App，或消耗私人 API 額度。
 
-- Luna 同音短句小量對照：原提示詞／不推理為 1/3，新提示詞／不推理為 2/3，新提示詞／低推理為 3/3；涵蓋重複的標點名稱誤字與保留「豆豆、豆子」。最慢樣本約 5.7 秒，因此 OpenAI 校正改為低推理、等待上限 8 秒；翻譯推理設定維持不變。新提示詞 537 字元，仍低於 550 上限。這是單輪文字測試，不代表一般準確率或錄音品質。
+- Luna 同音短句小量對照：原提示詞／不推理為 1/3，新提示詞／不推理為 2/3，新提示詞／低推理為 3/3；涵蓋重複的標點名稱誤字與保留「豆豆、豆子」。最慢樣本約 5.7 秒，因此當時 OpenAI 校正改為低推理、等待上限 8 秒；此為歷史測試，2026-10-11 已移除校正短期限；翻譯推理設定維持不變。新提示詞 537 字元，仍低於 550 上限。這是單輪文字測試，不代表一般準確率或錄音品質。
 - 同一修改另以正式請求參數（低推理、8 秒 timeout）測試 4 個固定回歸句：同音詞位置、中英夾雜成語、網址／程式碼保留、合法「推出」均通過，約 1.8～3.6 秒；不代表一般品質或延遲保證。
 
 - 本版改用 Fn 立即啟動的原生錄音，取消等待提示音與回音消除流程。第一段音訊寫入後才播開始音；提示音可能入錄，無雜訊幻覺不是本版承諾。先前回音消除實驗的連續無人聲驗證未通過，不得把單次或合成通過宣稱為全面解決。

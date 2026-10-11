@@ -2,6 +2,30 @@ import XCTest
 @testable import OpenTypelessCore
 
 final class CloudProviderTests: XCTestCase {
+    func testCorrectionWaitsPastFormerEightSecondDeadline() throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FixtureProtocol.self]
+        FixtureProtocol.status = 200
+        FixtureProtocol.body = Data(#"{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"long correction completed"}]}]}"#.utf8)
+        FixtureProtocol.delay = 9
+        defer { FixtureProtocol.delay = 0 }
+        let body = try ContextCorrection.draft(text: "long fixture", entries: [], model: "fixture", timeout: CloudProvider.openai.correctionTimeoutSeconds)
+        let result = try CloudClient(configuration: config).complete(body, provider: .openai, purpose: .correction, key: "fixture")
+        XCTAssertEqual(result, "long correction completed")
+    }
+
+    func testAllCorrectionProvidersHaveNoShortDeadlineButTranslationKeepsItsTimeout() throws {
+        for provider in CloudProvider.allCases {
+            XCTAssertFalse(provider.correctionTimeoutSeconds.isFinite)
+            let body = try ContextCorrection.draft(text: "測試", entries: [], model: "fixture", timeout: provider.correctionTimeoutSeconds)
+            XCTAssertFalse(body.timeoutSeconds.isFinite)
+            let request = try CloudWire.request(body, provider: provider, purpose: .correction, key: "fixture")
+            XCTAssertEqual(request.timeoutInterval, TimeInterval(Int32.max))
+            let translation = try CloudWire.request(ChatDraft.translate(text: "測試", timeout: 25), provider: provider, purpose: .translation, key: "fixture")
+            XCTAssertEqual(translation.timeoutInterval, 25)
+        }
+    }
+
     func testEachProviderUsesItsOwnHostAndHeaderWithoutAudioOrKeyInURL() throws {
         for provider in CloudProvider.allCases {
             let body = try ContextCorrection.draft(text: "check 麥克風全線", entries: [], model: "ignored")
@@ -40,7 +64,7 @@ final class CloudProviderTests: XCTestCase {
                 XCTAssertEqual(tj["model"] as? String, "gpt-6-luna")
                 XCTAssertEqual((cj["reasoning"] as? [String: Any])?["effort"] as? String, "low")
                 XCTAssertEqual((tj["reasoning"] as? [String: Any])?["effort"] as? String, "none")
-                XCTAssertEqual(c.timeoutInterval, 8)
+                XCTAssertEqual(c.timeoutInterval, TimeInterval(Int32.max))
                 XCTAssertEqual(cj["store"] as? Bool, false)
                 XCTAssertNotNil(cj["text"]); XCTAssertNil(tj["text"])
                 XCTAssertNil(cj["temperature"])
@@ -206,15 +230,24 @@ final class CloudProviderTests: XCTestCase {
 }
 
 private final class FixtureProtocol: URLProtocol {
+    static var delay: TimeInterval = 0
+    private var delayed: DispatchWorkItem?
     static var status = 200
     static var body = Data()
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1", headerFields: [:])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Self.body)
-        client?.urlProtocolDidFinishLoading(self)
+        let data = Self.body
+        let deliver = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
+        delayed = deliver
+        if Self.delay > 0 { DispatchQueue.global().asyncAfter(deadline: .now() + Self.delay, execute: deliver) }
+        else { deliver.perform() }
     }
-    override func stopLoading() {}
+    override func stopLoading() { delayed?.cancel() }
 }

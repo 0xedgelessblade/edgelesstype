@@ -16,7 +16,7 @@ public enum CloudProvider: String, Codable, CaseIterable {
         case .openai: return "gpt-6-luna"
         }
     }
-    public var correctionTimeoutSeconds: TimeInterval { self == .openai ? 8 : 4 }
+    public var correctionTimeoutSeconds: TimeInterval { .infinity }
     public var modelsDescription: String {
         "校正：\(model(for: .correction)) · 翻譯：\(model(for: .translation))"
     }
@@ -87,7 +87,7 @@ public enum CloudWire {
         guard !key.unicodeScalars.contains(where: CharacterSet.whitespacesAndNewlines.contains) else { throw CloudError.invalidKey }
         var request = URLRequest(url: provider.endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = body.timeoutSeconds
+        request.timeoutInterval = body.timeoutSeconds.isFinite ? body.timeoutSeconds : TimeInterval(Int32.max)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var payload: [String: Any]
         let model = provider.model(for: purpose)
@@ -177,8 +177,15 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
     public func complete(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String,
                          onModel: ((String?) -> Void)? = nil) throws -> String {
         let request = try CloudWire.request(body, provider: provider, purpose: purpose, key: key)
-        configuration.httpCookieStorage = nil; configuration.urlCache = nil
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        let sessionConfiguration = configuration.copy() as! URLSessionConfiguration
+        sessionConfiguration.httpCookieStorage = nil; sessionConfiguration.urlCache = nil
+        if !body.timeoutSeconds.isFinite {
+            // No application correction deadline. Foundation requires a finite
+            // transport interval; use its 32-bit seconds horizon, not 4/8 seconds.
+            sessionConfiguration.timeoutIntervalForRequest = TimeInterval(Int32.max)
+            sessionConfiguration.timeoutIntervalForResource = TimeInterval(Int32.max)
+        }
+        let session = URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let semaphore = DispatchSemaphore(value: 0)
         let box = CloudResultBox()
@@ -195,7 +202,11 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
             semaphore.signal()
         }
         task.resume()
-        guard semaphore.wait(timeout: .now() + body.timeoutSeconds + 1) == .success else { task.cancel(); throw CloudError.timeout }
+        if body.timeoutSeconds.isFinite {
+            guard semaphore.wait(timeout: .now() + body.timeoutSeconds + 1) == .success else { task.cancel(); throw CloudError.timeout }
+        } else {
+            semaphore.wait()
+        }
         return try box.value.get()
     }
 }

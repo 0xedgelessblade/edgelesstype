@@ -330,7 +330,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             self.cancel()
         }
         panel.onConfirm = { [weak self] in self?.finish() }
-        paster.onDismiss = { [weak self] in self?.panel.hide(); self?.finishTiming() }
+        paster.onDismiss = { [weak self] in self?.panel.dismissPending(); self?.finishTiming() }
         rebuildMenu()
         explainIfNeeded {
             self.installKeys()
@@ -763,7 +763,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let config else { return }
         let transcript: String
         do {
-            transcript = try Transcriber(config: config, vocabulary: recordingVocabulary).transcribe(url: url)
+            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary).transcribe(url: url))
         } catch {
             DispatchQueue.main.async { self.panel.showMessage((error as? SpeechEngineError)?.errorDescription ?? "轉寫失敗，沒有貼上") }
             return
@@ -800,20 +800,28 @@ final class AppController: NSObject, NSApplicationDelegate {
             // text that has already reached the destination.
             var finalText = rough
             if Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
-               let polished = try? polish(rough, config: config), SpeechContent.hasWords(polished) {
-                finalText = polished
+               OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
+                do {
+                    let polished = try polish(rough, config: config)
+                    if SpeechContent.hasWords(polished) { finalText = polished }
+                } catch {
+                    timing.correctionOutcome = (error as? CloudError)?.rawValue ?? "request_failed"
+                }
             }
-            let text = finalText
+            guard let text = try? OutputPolicy.traditional(finalText) else {
+                DispatchQueue.main.async { self.panel.showWarning("繁體中文轉換失敗，本次沒有輸出文字。", title: "文字未輸出") }
+                return
+            }
             timing.timeToPasteReadySeconds = timing.elapsed()
             let readyTiming = timing
             DispatchQueue.main.async {
                 self.pendingTiming = readyTiming
-                self.panel.showPending(text)
+                self.panel.showPending(text, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
                 self.paster.offer(text, into: self.targetPID)
             }
         case .waitForEnglish(let chinese):
             do {
-                let english = try translate(chinese, config: config)
+                let english = try OutputPolicy.traditional(translate(chinese, config: config))
                 guard SpeechContent.hasWords(english) else {
                     DispatchQueue.main.async { self.panel.hide() }
                     return
@@ -822,17 +830,18 @@ final class AppController: NSObject, NSApplicationDelegate {
                 let readyTiming = timing
                 DispatchQueue.main.async {
                     self.pendingTiming = readyTiming
-                    self.panel.showPending(english)
+                    self.panel.showPending(english, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
                     self.paster.offer(english, into: self.targetPID)
                 }
             } catch {
-                DispatchQueue.main.async { self.panel.showMessage("翻譯失敗，沒有貼上中文") }
+                let reason = (error as? CloudError)?.errorDescription ?? "翻譯失敗，請稍後再試。"
+                DispatchQueue.main.async { self.panel.showWarning(reason + "\n本次沒有輸出翻譯文字。", title: "翻譯未完成") }
             }
         }
     }
 
     private func polish(_ text: String, config: AppConfig) throws -> String {
-        let body = ChatDraft.polish(text: text, timeout: max(6, config.polish.timeoutSeconds))
+        let body = ChatDraft.polish(text: text, timeout: .infinity)
         return try CloudAccess.complete(body, purpose: .correction)
     }
 
@@ -844,7 +853,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func finishTiming() {
         guard var timing = pendingTiming else { return }
         pendingTiming = nil
-        timing.timeToPasteConfirmedSeconds = timing.elapsed()
+        timing.timeToPasteConfirmedSeconds = paster.lastInsertionConfirmed ? timing.elapsed() : 0
         let info = ResidentSpeechEngine.shared.diagnostics
         timing.workerPID = info.pid
         timing.metal = info.metal
