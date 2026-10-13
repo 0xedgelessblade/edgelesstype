@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a step-by-step personal signing guide and a metadata-only helper to select each user's own Keychain identity; no author certificate or private key is distributed.
+- Record user-confirmed Grok Bot automatic paste and preview dismissal.
+
 - Require a stable certificate-backed identity for local updates, separate the local bundle ID from public/test builds, verify continuity and restore original signed files on failure.
 
 - Remove trailing Chinese/English full stops from final dictation and translation previews and paste text; preserve internal punctuation.

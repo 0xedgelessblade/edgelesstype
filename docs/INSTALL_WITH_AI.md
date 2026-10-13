@@ -88,7 +88,7 @@ After bootstrap succeeds:
 env -u SIGNING_IDENTITY bash Scripts/pack-app.sh > .build/install-logs/build.log 2>&1
 ```
 
-This uses the project's default ad-hoc signing, without selecting the author's or the user's personal signing certificate. Do not export certificates, create a Developer ID account, or submit anything for notarization during source installation. Rebuilding an existing installation can require the user to grant app permissions again.
+The public build uses ad-hoc signing for tests and CI. For a daily local installation with repeated updates, offer the [personal local signing setup](LOCAL-SIGNING.md) before granting runtime permissions. Each user creates their own identity with explicit consent; never reuse or export the author's certificate/private key, create a Developer ID account, or submit anything for notarization. Installation permission alone does not authorize creating a signing identity. The user handles all Keychain passwords and system approvals. Explain that stable signing avoids a known per-build permission-reset cause, but cannot guarantee that macOS never asks again.
 
 Verify each command's exit status and continue only after it succeeds:
 
