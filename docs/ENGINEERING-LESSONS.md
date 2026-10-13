@@ -2,7 +2,7 @@
 
 本指南說明 edgelesstype 如何處理貼上相容性、更新後權限失效、App 副本混淆、等待時間與狀態介面。目的是讓開發者能重現判斷方法，不是繞過 macOS 安全機制。
 
-本文只使用通用路徑、合成資料與去識別化結論。沒有實際使用者的畫面、聊天、錄音、字典、帳號、憑證指紋、金鑰或原始日誌。以下檔案路徑相對於公開原始碼專案；命令中的 `/path/to/...` 必須換成自己的位置。
+本文使用通用路徑、合成資料與去識別化結論，保留可核對的公開程式碼連結。公開模組名稱與既有 Git 歷史仍可提供專案層級的關聯；這不是整個 repository 的匿名化或歷史清除。沒有實際使用者的畫面、聊天、錄音、字典、帳號、憑證指紋、金鑰或原始日誌。以下檔案路徑相對於公開原始碼專案；命令中的 `/path/to/...` 必須換成自己的位置。
 
 ## 1. 先把成功拆成不同層次
 
@@ -57,7 +57,7 @@
 - 不斷重試 Cmd+V：可能造成延遲的雙重貼上。
 - 把替代路徑開放給所有 App：會把已知相容性擴大成沒有證據的焦點猜測。
 
-程式：[Paster](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation](../Sources/OpenTypelessCore/PasteConfirmation.swift)。測試：[貼上生命週期](../Scripts/test-paste-flow.py)。Grok Bot 的自動貼上與收框有使用者實際成功回報；不要將它寫成所有版本、所有欄位的自動化認證。
+程式：[Paster](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation](../Sources/OpenTypelessCore/PasteConfirmation.swift)。測試：[貼上生命週期](../Scripts/test-paste-flow.py)。某個採用網頁介面的聊天客戶端，其自動貼上與收框有使用者實際成功回報；本文不列個別測試者的軟體清單，也不將這項回報寫成所有版本、所有欄位的自動化認證。
 
 ## 3. 同名 App 太多，重建後反而出現舊功能
 
@@ -91,8 +91,8 @@ flowchart LR
 ### 查身分，不只查簽章「有效」
 
 ```sh
-codesign --verify --strict "/path/to/Local Edgeless Type.app"
-codesign -d -r- "/path/to/Local Edgeless Type.app"
+codesign --verify --strict "/path/to/YourDictationApp.app"
+codesign -d -r- "/path/to/YourDictationApp.app"
 ```
 
 第一個命令確認目前檔案與簽章相符；第二個顯示 designated requirement，也就是系統辨識程式身分的條件。
@@ -136,7 +136,7 @@ codesign -d -r- "/path/to/Local Edgeless Type.app"
 | Spotlight | 檔案索引保存的 bundle ID／顯示名稱 |
 
 ```sh
-mdls -name kMDItemCFBundleIdentifier -name kMDItemDisplayName "/path/to/Local Edgeless Type.app"
+mdls -name kMDItemCFBundleIdentifier -name kMDItemDisplayName "/path/to/YourDictationApp.app"
 ```
 
 曾觀察到 App 內部與 LaunchServices 已更新，但 Spotlight 和長時間開著的選檔流程仍帶入舊識別碼。結果是選到正確檔案，權限系統卻查找已不存在的舊 App。
@@ -224,7 +224,7 @@ git diff --cached --check
 - 核心、貼上生命週期、簽署設定與更新回復有可重跑的合成測試。
 - 兩個不同合成程式可通過相同憑證身分驗證；後續本機更新也已通過原 requirement。
 - 真實權限清單已觀察到日常 App，且更新後的 event tap 能啟動；不能擴大成所有 macOS 版本永不重問。
-- Grok Bot 自動貼上與收框來自使用者實測成功回報，與純邏輯測試分開記錄。
+- 聊天客戶端的自動貼上與收框包含使用者實測成功回報，與純邏輯測試分開記錄；本文不將該回報與個人工作流連結。
 - 處理狀態有原生繪圖預覽檢查；整體速度沒有公開真人錄音基準，也沒有宣稱特定百分比提升。
 
 接手者先讀 [AGENTS.md](../AGENTS.md)、[AI-GUIDE](AI-GUIDE.md) 與 [knowledge-index](knowledge-index.json)，再選與症狀相符的最小修正。保持「觀察 → 假設 → 有界測試 → 結果 → 限制」的順序，比持續增加權限、重試或猜測更可靠。
