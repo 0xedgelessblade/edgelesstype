@@ -167,26 +167,22 @@ public enum CloudWire {
 
 /// No disk cache, cookies, response-body logging, or cross-host redirects.
 public final class CloudClient: NSObject, URLSessionTaskDelegate {
-    private let configuration: URLSessionConfiguration
+    public static let shared = CloudClient()
+    private let session: URLSession
     public init(configuration: URLSessionConfiguration = .ephemeral) {
-        self.configuration = configuration
+        let config = configuration.copy() as! URLSessionConfiguration
+        config.httpCookieStorage = nil; config.urlCache = nil; config.urlCredentialStorage = nil
+        config.timeoutIntervalForRequest = TimeInterval(Int32.max)
+        config.timeoutIntervalForResource = TimeInterval(Int32.max)
+        session = URLSession(configuration: config, delegate: PrivateHTTPDelegate(), delegateQueue: nil)
         super.init()
     }
+    deinit { session.invalidateAndCancel() }
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     public func complete(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String,
                          onModel: ((String?) -> Void)? = nil) throws -> String {
         let request = try CloudWire.request(body, provider: provider, purpose: purpose, key: key)
-        let sessionConfiguration = configuration.copy() as! URLSessionConfiguration
-        sessionConfiguration.httpCookieStorage = nil; sessionConfiguration.urlCache = nil
-        if !body.timeoutSeconds.isFinite {
-            // No application correction deadline. Foundation requires a finite
-            // transport interval; use its 32-bit seconds horizon, not 4/8 seconds.
-            sessionConfiguration.timeoutIntervalForRequest = TimeInterval(Int32.max)
-            sessionConfiguration.timeoutIntervalForResource = TimeInterval(Int32.max)
-        }
-        let session = URLSession(configuration: sessionConfiguration, delegate: self, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
         let semaphore = DispatchSemaphore(value: 0)
         let box = CloudResultBox()
         let task = session.dataTask(with: request) { data, response, error in

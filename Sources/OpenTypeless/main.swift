@@ -170,11 +170,11 @@ struct Transcriber {
     var vocabulary: VocabularySettings? = nil
     var transcription = TranscriptionPreferences()
 
-    func transcribe(url: URL) throws -> String {
+    func transcribe(url: URL, onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil) throws -> String {
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
         return try TranscriptionRouter.run(transcription,
             local: { try localTranscribe(url: url) },
-            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription) })
+            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription, onProgress: onProgress, onTimings: onTimings) })
     }
 
     private func localTranscribe(url: URL) throws -> String {
@@ -771,7 +771,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         timing.recordingStopSeconds = timing.elapsed()
         let startedTiming = timing
         status.button?.title = mode == .translation ? "譯中" : "轉寫"
-        panel.showWorking()
+        panel.showWorking(recordingTranscription.backend == .openAI ? .uploading : .recognizing)
         DispatchQueue.global(qos: .userInitiated).async {
             self.process(url: url, mode: mode, timing: startedTiming)
         }
@@ -822,7 +822,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let config else { return }
         let transcript: String
         do {
-            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription).transcribe(url: url))
+            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription).transcribe(url: url,
+                onProgress: { fraction in
+                    DispatchQueue.main.async { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
+                }, onTimings: { timing.audioTransfer = $0 }))
         } catch {
             let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
                 ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
@@ -836,8 +839,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         let correctionStarted = DispatchTime.now().uptimeNanoseconds
         let corrected: String
-        if recordingVocabulary.contextCorrectionEnabled && !transcript.isEmpty {
-            DispatchQueue.main.async { self.status.button?.title = "校正" }
+        if ProcessingPlan.separateCorrection(mode: mode, enabled: recordingVocabulary.contextCorrectionEnabled) && !transcript.isEmpty {
+            DispatchQueue.main.async { self.status.button?.title = "校正"; self.panel.showWorking(.correcting) }
             timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
             do {
                 corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config)
@@ -865,6 +868,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
                OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
                 do {
+                    DispatchQueue.main.async { self.panel.showWorking(.correcting) }
                     let polished = try polish(rough, config: config)
                     if SpeechContent.hasWords(polished) { finalText = polished }
                 } catch {
@@ -888,8 +892,11 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.paster.offer(text, into: self.targetPID, acceptModelText: ["corrected", "unchanged"].contains(readyTiming.correctionOutcome))
             }
         case .waitForEnglish(let chinese):
+            DispatchQueue.main.async { self.status.button?.title = "翻譯"; self.panel.showWorking(.translating) }
+            let translationStarted = DispatchTime.now().uptimeNanoseconds
             do {
                 let english = try OutputPolicy.forDelivery(translate(chinese, config: config))
+                timing.translationSeconds = Double(DispatchTime.now().uptimeNanoseconds - translationStarted) / 1e9
                 guard SpeechContent.hasWords(english) else {
                     DispatchQueue.main.async { self.panel.hide() }
                     return
@@ -914,7 +921,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func translate(_ text: String, config: AppConfig) throws -> String {
-        let body = ChatDraft.translate(text: text, timeout: config.translate.timeoutSeconds, reasoningEffort: config.translate.reasoningEffort)
+        let body: ChatBody
+        if recordingVocabulary.contextCorrectionEnabled {
+            body = try ContextCorrection.translationDraft(text: text, entries: recordingVocabulary.entries,
+                timeout: config.translate.timeoutSeconds, reasoningEffort: config.translate.reasoningEffort)
+        } else {
+            body = ChatDraft.translate(text: text, timeout: config.translate.timeoutSeconds, reasoningEffort: config.translate.reasoningEffort)
+        }
         return try CloudAccess.complete(body, purpose: .translation)
     }
 

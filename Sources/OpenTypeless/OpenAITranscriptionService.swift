@@ -2,7 +2,8 @@ import Foundation
 import OpenTypelessCore
 
 enum OpenAITranscriptionService {
-    static func transcribe(url: URL, preferences: TranscriptionPreferences) throws -> String {
+    static func transcribe(url: URL, preferences: TranscriptionPreferences, onProgress: ((Double) -> Void)? = nil,
+                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil) throws -> String {
         guard try preferences.validated().backend == .openAI, !CloudAccess.offlineProbe else { throw TranscriptionError.cloudNotEnabled }
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { throw TranscriptionError.audioUnavailable }
         guard size <= OpenAITranscriptionWire.maximumAudioBytes else { throw TranscriptionError.audioTooLarge }
@@ -10,6 +11,6 @@ enum OpenAITranscriptionService {
         let key: String
         do { key = String(decoding: try CloudAccess.store(.openai).readSecret(), as: UTF8.self) }
         catch { throw TranscriptionError.missingOpenAIKey }
-        return try OpenAITranscriptionClient().transcribe(audio: audio, preferences: preferences, key: key)
+        return try OpenAITranscriptionClient.shared.transcribe(audio: audio, preferences: preferences, key: key, onProgress: onProgress, onTimings: onTimings)
     }
 }

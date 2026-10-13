@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Show distinct recording, upload, recognition, correction and translation states; processing uses a spinner, stage label and elapsed time instead of recording controls.
+- Reuse ephemeral HTTP sessions without caches, cookies or stored credentials; combine enabled text correction with translation in one request while preserving provider and model choices.
+- Record numeric upload/response-wait/connection timing when Foundation provides it; no recordings or text are logged. Real end-to-end speed remains environment-dependent.
+
 - Add a step-by-step personal signing guide and a metadata-only helper to select each user's own Keychain identity; no author certificate or private key is distributed.
 - Record user-confirmed Grok Bot automatic paste and preview dismissal.
 

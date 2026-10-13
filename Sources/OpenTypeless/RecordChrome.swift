@@ -39,18 +39,23 @@ final class RecordChrome {
     func showRecording() {
         pendingWarning = nil
         pill.mode = .recording
+        pill.setAccessibilityLabel("錄音中")
         panel.ignoresMouseEvents = false
         startWave()
         place(width: 168, height: 44)
         panel.orderFrontRegardless()
     }
 
-    func showWorking() {
+    func showWorking(_ stage: ProcessingStage = .recognizing, progress: Double? = nil) {
         pendingWarning = nil
-        pill.mode = .working
+        if case .working = pill.mode {} else { pill.processingStartedAt = Date() }
+        pill.mode = .working(stage)
+        pill.workingProgress = progress
+        pill.setAccessibilityElement(true)
+        pill.setAccessibilityLabel(stage.title + "，錄音已停止")
         panel.ignoresMouseEvents = true
         startWave()
-        place(width: 168, height: 44)
+        place(width: 260, height: 64)
         panel.orderFrontRegardless()
     }
 
@@ -127,7 +132,7 @@ final class RecordChrome {
 final class PillView: NSView {
     enum Mode {
         case recording
-        case working
+        case working(ProcessingStage)
         case pending(String)
         case warning(String, String)
         case message(String)
@@ -136,6 +141,8 @@ final class PillView: NSView {
     var pendingHint = "文字已備妥；若未出現，請按 ⌘V 貼上。"
     var mode: Mode = .recording
     var phase = 0.0
+    var workingProgress: Double?
+    var processingStartedAt = Date()
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
 
@@ -169,8 +176,10 @@ final class PillView: NSView {
             let detail: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white, .paragraphStyle: paragraph]
             (text as NSString).draw(in: NSRect(x: 16, y: 12, width: bounds.width - 44, height: bounds.height - 54), withAttributes: detail)
             drawX(in: pendingCloseRect.insetBy(dx: 5, dy: 5))
-        case .recording, .working:
+        case .recording:
             drawControls()
+        case .working(let stage):
+            drawWorking(stage)
         }
     }
 
@@ -241,16 +250,31 @@ final class PillView: NSView {
         NSColor.white.setFill()
         for index in 0..<bars {
             let wave = abs(sin(phase + Double(index) * 0.7))
-            let height = 3 + CGFloat(wave) * (modeIsWorking ? 5 : 12)
+            let height = 3 + CGFloat(wave) * 12
             let rect = NSRect(x: x, y: midY - height / 2, width: barWidth, height: height)
             NSBezierPath(roundedRect: rect, xRadius: 0.8, yRadius: 0.8).fill()
             x += barWidth + gap
         }
     }
 
-    private var modeIsWorking: Bool {
-        if case .working = mode { return true }
-        return false
+    private func drawWorking(_ stage: ProcessingStage) {
+        let center = NSPoint(x: 27, y: bounds.midY)
+        let track = NSBezierPath(ovalIn: NSRect(x: center.x - 10, y: center.y - 10, width: 20, height: 20))
+        track.lineWidth = 2.5
+        NSColor.systemBlue.withAlphaComponent(0.25).setStroke(); track.stroke()
+        let arc = NSBezierPath()
+        arc.lineWidth = 2.5; arc.lineCapStyle = .round
+        arc.appendArc(withCenter: center, radius: 10, startAngle: CGFloat(-phase * 45), endAngle: CGFloat(-phase * 45 + 260))
+        NSColor.systemCyan.setStroke(); arc.stroke()
+        let title: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.white]
+        (stage.title as NSString).draw(at: NSPoint(x: 50, y: 31), withAttributes: title)
+        let elapsed = max(0, Int(Date().timeIntervalSince(processingStartedAt)))
+        var detail = "錄音已停止 · \(elapsed) 秒"
+        if stage == .uploading, let progress = workingProgress {
+            detail += " · \(Int(min(1, max(0, progress)) * 100))%"
+        }
+        let caption: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(calibratedWhite: 0.72, alpha: 1)]
+        (detail as NSString).draw(at: NSPoint(x: 50, y: 12), withAttributes: caption)
     }
 
     private func drawX(in rect: NSRect) {

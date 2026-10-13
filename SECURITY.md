@@ -27,3 +27,5 @@ The OpenAI transcription option reuses the encrypted OpenAI key record, independ
 ## Local code-signing identity
 
 API credentials keep the encrypted-file design above. A separate, user-approved code-signing identity may live in the login Keychain solely to give the local app a stable identity across updates. It is not an API key and is never exported or published. Public CI uses no private signing identity. Local updates require the private signing profile and verify continuity instead of falling back to ad-hoc signatures. See [stable local signing](docs/LOCAL-SIGNING.md).
+
+HTTP session reuse retains connection state, not disk response caches, cookies or credential storage. Audio requests can report numeric upload progress and transaction timings; unavailable timings remain absent. Translation with enabled context correction sends transcript and vocabulary together to the already-selected provider in one request. Runtime timing records contain no transcript, recording, dictionary, key, URL or request ID and must not be published.

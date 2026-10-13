@@ -14,7 +14,7 @@ enum CloudAccess {
         if offlineProbe { offlineProbeRequests += 1; throw CloudError.invalidRequest }
         let provider = try preferences.load().provider
         let key = String(decoding: try store(provider).readSecret(), as: UTF8.self)
-        return try CloudClient().complete(body, provider: provider, purpose: purpose, key: key) { model in
+        return try CloudClient.shared.complete(body, provider: provider, purpose: purpose, key: key) { model in
             CloudModelStatus.record(model, provider: provider, purpose: purpose)
         }
     }
@@ -187,7 +187,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
             let body = ChatBody(model: selected.model(for: .correction), timeoutSeconds: 20, reasoningEffort: nil,
                                 system: "Reply with OK only.", user: "Connection test.")
             let result = Result {
-                try CloudClient().complete(body, provider: selected, purpose: .correction, key: key) { model in
+                try CloudClient.shared.complete(body, provider: selected, purpose: .correction, key: key) { model in
                     CloudModelStatus.record(model, provider: selected, purpose: .correction)
                 }
             }

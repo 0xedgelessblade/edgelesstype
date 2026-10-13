@@ -101,26 +101,39 @@ public enum OpenAITranscriptionWire {
 
 /// Explicit opt-in audio upload; no logging, persistent cache or redirects.
 public final class OpenAITranscriptionClient: NSObject, URLSessionTaskDelegate {
-    private let configuration: URLSessionConfiguration
-    public init(configuration: URLSessionConfiguration = .ephemeral) { self.configuration = configuration; super.init() }
-    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                           newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
-    public func transcribe(audio: Data, preferences: TranscriptionPreferences, key: String) throws -> String {
-        let request = try OpenAITranscriptionWire.request(audio: audio, preferences: preferences, key: key)
+    public static let shared = OpenAITranscriptionClient()
+    private let session: URLSession
+    private let transport: PrivateHTTPDelegate
+    public init(configuration: URLSessionConfiguration = .ephemeral) {
         let config = configuration.copy() as! URLSessionConfiguration
         config.urlCache = nil; config.httpCookieStorage = nil; config.urlCredentialStorage = nil
         config.timeoutIntervalForResource = 600
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
+        let delegate = PrivateHTTPDelegate()
+        transport = delegate
+        session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        super.init()
+    }
+    deinit { session.invalidateAndCancel() }
+    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                           newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+    public func transcribe(audio: Data, preferences: TranscriptionPreferences, key: String,
+                           onProgress: ((Double) -> Void)? = nil,
+                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil) throws -> String {
+        var request = try OpenAITranscriptionWire.request(audio: audio, preferences: preferences, key: key)
+        let body = request.httpBody!
+        request.httpBody = nil
         let gate = DispatchSemaphore(value: 0)
         let box = TranscriptionResultBox()
-        let task = session.dataTask(with: request) { data, response, error in
+        let task = session.uploadTask(with: request, from: body) { data, response, error in
             if let error { box.value = .failure((error as? URLError)?.code == .timedOut ? CloudError.timeout : CloudError.network) }
             else if let data, let response = response as? HTTPURLResponse {
                 box.value = Result { try OpenAITranscriptionWire.parse(data, status: response.statusCode) }
             } else { box.value = .failure(CloudError.invalidResponse) }
             gate.signal()
         }
+        transport.track(task, progress: onProgress)
+        defer { if let value = transport.finish(task) { onTimings?(value) } }
+        onProgress?(0)
         task.resume()
         guard gate.wait(timeout: .now() + 601) == .success else { task.cancel(); throw CloudError.timeout }
         return try box.value.get()

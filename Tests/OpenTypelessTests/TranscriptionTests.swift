@@ -85,6 +85,11 @@ final class TranscriptionTests: XCTestCase {
         XCTAssertEqual(TranscriptionFixtureProtocol.calls, 0)
         XCTAssertEqual(try client.transcribe(audio: fixtureAudio, preferences: enabled, key: "fixture"), "固定轉寫文字。")
         XCTAssertEqual(TranscriptionFixtureProtocol.calls, 1)
+        var progress: [Double] = []
+        XCTAssertEqual(try client.transcribe(audio: fixtureAudio, preferences: enabled, key: "second-fixture", onProgress: { progress.append($0) }), "固定轉寫文字。")
+        XCTAssertEqual(TranscriptionFixtureProtocol.calls, 2)
+        XCTAssertEqual(progress.first, 0)
+
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let request = URLRequest(url: URL(string: "https://example.com/redirect")!)

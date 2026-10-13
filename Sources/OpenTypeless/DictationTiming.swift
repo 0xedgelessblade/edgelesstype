@@ -1,4 +1,5 @@
 import Foundation
+import OpenTypelessCore
 
 /// Local timing and outcome only: no recording, transcript, clipboard value, or dictionary.
 struct DictationTiming: Codable {
@@ -8,6 +9,8 @@ struct DictationTiming: Codable {
     var recordingStopSeconds: Double = 0
     var recognitionSeconds: Double = 0
     var correctionSeconds: Double = 0
+    var translationSeconds: Double = 0
+    var audioTransfer: TranscriptionTransferTimings?
     var correctionOutcome = "not_requested"
     var correctionProvider: String?
     var timeToPasteReadySeconds: Double = 0

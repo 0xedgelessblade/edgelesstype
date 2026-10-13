@@ -203,3 +203,9 @@ The latest failure status is saved locally as `Config/last-correction-failure.js
 Grok Bot 0.70.2 (`com.anysphere.sand`) exposed only window/container metadata during inspection. The user reported that manual Cmd+V inserts the text and dismisses the preview. The automatic opaque-focus fallback now includes this exact bundle ID alongside Codex, while requiring the original target to remain the foreground process. It sends one process-targeted Cmd+V, never presses Enter, and retains the dictated clipboard unless insertion is read back. Unknown apps still require a resolved target.
 
 Evidence: in-memory lifecycle tests cover single delivery, dismissal, unconfirmed clipboard retention and background-target rejection. On 2026-10-13 the user confirmed that automatic paste and preview dismissal work in their Grok Bot input. This is a user-reported live result, not an automated readback test or a guarantee for all versions.
+
+## Processing status and latency
+
+Recording retains the waveform. After recording stops, the panel switches to a spinner, explicit stage text, elapsed time and “錄音已停止”. Audio-upload progress is shown only when Foundation provides the expected body size; after the body is sent, the stage becomes recognition. Request-body send time and response waiting are measured separately when available; response waiting includes transport and server time, not a pure model execution measurement.
+
+Correction and translation reuse ephemeral sessions. When translation mode and context correction are both enabled, one translation request handles speech-draft correction plus translation with the same vocabulary/provider; dictation correction remains enabled as before. No provider or model is automatically changed, and no real audio is uploaded by tests. Synthetic request tests verify routing and progress, not live accuracy or a guaranteed latency improvement.
