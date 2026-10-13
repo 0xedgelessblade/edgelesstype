@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Require a stable certificate-backed identity for local updates, separate the local bundle ID from public/test builds, verify continuity and restore original signed files on failure.
+
 - Remove trailing Chinese/English full stops from final dictation and translation previews and paste text; preserve internal punctuation.
 
 - Add a narrow Grok Bot fallback for editors without readable accessibility focus; send paste once while the original process remains foreground. Live automatic insertion still requires target-app verification.

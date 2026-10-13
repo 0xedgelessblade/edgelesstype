@@ -32,3 +32,8 @@ __pycache__/
 /Config/last-correction-failure.json
 
 /Config/transcription.json
+
+/LOCAL-SIGNING.json
+/LOCAL-BUILD.json
+*.pfx
+*.p8

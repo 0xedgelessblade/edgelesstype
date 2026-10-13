@@ -3,6 +3,8 @@
 import importlib.util
 from pathlib import Path
 import plistlib
+import json
+import subprocess
 import tempfile
 from unittest.mock import patch
 
@@ -24,7 +26,10 @@ with tempfile.TemporaryDirectory() as directory:
     for name in ('Config/app.json','Config/vocabulary.json','Config/transcription.json','private/store.encrypted.json',
                  'Models/example.bin','Sources/legacy.swift','Local Edgeless Type.app/Contents/Resources/app.json'):
         p = target / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b'synthetic private sentinel'); preserved[p] = p.read_bytes()
-    with patch.object(module.subprocess, 'run'):
+    (target / 'LOCAL-SIGNING.json').write_text(json.dumps({'bundleIdentifier':module.LOCAL_ID,'identitySHA1':'a'*40}))
+    dr='identifier \"'+module.LOCAL_ID+'\" and certificate leaf = H\"'+ 'a'*40 +'\"'
+    response=subprocess.CompletedProcess([],0,stdout='designated => '+dr+'\n',stderr='')
+    with patch.object(module.subprocess, 'run', return_value=response):
         module.install(source, target, 'Local Edgeless Type', 'fixture-revision')
     assert all(p.read_bytes() == value for p, value in preserved.items())
     assert (target_contents / 'MacOS/edgelesstype').read_bytes() == b'new'
@@ -38,4 +43,42 @@ with tempfile.TemporaryDirectory() as directory:
         except OSError: pass
     assert (target_contents / 'MacOS/edgelesstype').read_bytes() == b'new'
     assert all(p.read_bytes() == value for p, value in preserved.items())
-    print('PASS failed signing restores executable and preserves private files')
+    print('PASS failed signing preserves the existing installation')
+    # Exercise failure after mutation, not just preflight failure.
+    def reject_new_signature(args, **kwargs):
+        if '--force' in args: raise OSError('synthetic signing failure')
+        return response
+    before={str(p.relative_to(target)):p.read_bytes() for p in target_contents.rglob('*') if p.is_file()}
+    with patch.object(module.subprocess, 'run', side_effect=reject_new_signature):
+        try: module.install(source,target,'Local Edgeless Type','fixture')
+        except OSError: pass
+        else: raise AssertionError('Signing failure was not rejected')
+    after={str(p.relative_to(target)):p.read_bytes() for p in target_contents.rglob('*') if p.is_file()}
+    assert before==after
+    print('PASS failed signing restores all original signed bytes without ad-hoc re-signing')
+    with patch.object(module.subprocess, 'run', return_value=response) as calls:
+        module.install(source,target,'Local Edgeless Type','second-build')
+        assert any(any(arg.startswith('-R=') for arg in call.args[0]) for call in calls.call_args_list)
+        assert all(not ('--sign' in call.args[0] and '-' in call.args[0]) for call in calls.call_args_list)
+    print('PASS updates validate the previous certificate-backed identity')
+    before=(target_contents/'MacOS/edgelesstype').read_bytes()
+    inspected=[0]
+    def changed_identity(args, **kwargs):
+        if '-d' in args:
+            inspected[0]+=1
+            if inspected[0]>1:
+                return subprocess.CompletedProcess([],0,stdout='',stderr='designated => '+dr.replace('a'*40,'b'*40)+'\n')
+        return response
+    with patch.object(module.subprocess,'run',side_effect=changed_identity):
+        try: module.install(source,target,'Local Edgeless Type','changed-signer')
+        except ValueError: pass
+        else: raise AssertionError('Changed signer was accepted')
+    assert (target_contents/'MacOS/edgelesstype').read_bytes()==before
+    print('PASS changed signing requirement rolls back')
+    (target/'LOCAL-SIGNING.json').unlink()
+    original=(target_contents/'MacOS/edgelesstype').read_bytes()
+    try: module.install(source,target,'Local Edgeless Type','fixture')
+    except FileNotFoundError: pass
+    else: raise AssertionError('Missing signer was not rejected')
+    assert (target_contents/'MacOS/edgelesstype').read_bytes()==original
+    print('PASS missing signer fails before mutation')

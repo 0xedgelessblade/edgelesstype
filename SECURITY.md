@@ -23,3 +23,7 @@ Paste diagnostics write at most 64 fixed stage labels for the latest offer to a 
 Local Whisper remains the default. Audio upload requires a separately stored OpenAI transcription choice and explicit audio consent. The choice is captured when recording starts. Only that recording is posted to the fixed HTTPS OpenAI transcription endpoint; redirects, cookies, credential storage and persistent response caching are disabled. The upload uses a generic filename, never a personal file path. Audio, response text and keys are not logged. The existing temporary recording is deleted after processing, including failures.
 
 The OpenAI transcription option reuses the encrypted OpenAI key record, independently of the selected text-correction provider. Merely opening the settings or saving a key does not enable audio upload. Preferences are runtime data in `Config/transcription.json` and are excluded from Git and public exports. Tests use synthetic bytes and URLProtocol fixtures, not private recordings or real credentials.
+
+## Local code-signing identity
+
+API credentials keep the encrypted-file design above. A separate, user-approved code-signing identity may live in the login Keychain solely to give the local app a stable identity across updates. It is not an API key and is never exported or published. Public CI uses no private signing identity. Local updates require the private signing profile and verify continuity instead of falling back to ad-hoc signatures. See [stable local signing](docs/LOCAL-SIGNING.md).
