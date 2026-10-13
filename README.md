@@ -1,4 +1,4 @@
-# edgelesstype
+# edgelesstype — Mac 語音輸入 / Voice dictation
 
 <img src="Resources/AppIcon-source.png" width="96" alt="edgelesstype app icon">
 
@@ -9,9 +9,14 @@
 給 **Apple Silicon M 系列 Mac、macOS 26 以上**使用的開源語音輸入 App。
 預設使用本機 Whisper；也可在「語音辨識」明確選用 OpenAI GPT Transcribe，上傳錄音轉成文字。後續上下文校正與中翻英服務可分開設定。
 
-## 工程排錯實戰
+[使用說明書](docs/USER-GUIDE.md) · [常見問題](docs/FAQ.md) · [English overview](docs/OVERVIEW.md) · [文件中心](docs/README.md) · [AI / llms.txt](llms.txt)
 
-想了解自動貼上、更新後權限失效、舊 App 索引、私人資料隔離，以及如何拆解等待時間，請看[從症狀到證據：工程排錯實戰](docs/ENGINEERING-LESSONS.md)。包含失敗教訓、修復步驟、可重跑測試與驗證界線；案例已去識別化。
+| 功能 | 預設與選擇 |
+|---|---|
+| 語音轉文字 | 預設本機 Whisper；可另行同意 OpenAI 錄音上傳 |
+| 繁體中文、字典與中翻英 | 本機繁體轉換；校正／翻譯使用自行設定的雲端服務 |
+| 錄音上下文 | 主開關與 OpenAI 傳送同意分開，預設皆關閉 |
+| 貼上與取消 | 自動貼入、手動補貼及處理中取消；不自動送出訊息 |
 
 ## 不會 CLI？交給你的 AI 安裝
 
@@ -32,13 +37,18 @@
 | 想做什麼 | 從哪裡開始 |
 |---|---|
 | 交給 AI 安裝 | [逐步安裝指南](docs/INSTALL_WITH_AI.md) |
-| 自己安裝與使用 | 下方的使用方式、原始碼安裝與 API 設定 |
+| 日常使用與功能選擇 | [使用說明書](docs/USER-GUIDE.md)、[FAQ](docs/FAQ.md) |
+| 尋找完整文件 | [文件中心](docs/README.md)、[English overview](docs/OVERVIEW.md) |
 | 了解設計與資料流 | [Architecture](docs/ARCHITECTURE.md) |
 | 找到類似問題的答案 | [Troubleshooting](docs/TROUBLESHOOTING.md) |
 | 讓自己的 LLM 研究或改造 | [AI guide](docs/AI-GUIDE.md)、[machine-readable index](docs/knowledge-index.json) |
 | 換模型或新增 API | [Development guide](DEVELOPMENT.md) |
 | 看哪些結果已被驗證 | [Compatibility and evidence](docs/COMPATIBILITY.md) |
 | 提出修正 | [Contributing](CONTRIBUTING.md) |
+
+## 工程排錯實戰
+
+想了解自動貼上、更新後權限失效、舊 App 索引、私人資料隔離，以及如何拆解等待時間，請看[從症狀到證據：工程排錯實戰](docs/ENGINEERING-LESSONS.md)。包含失敗教訓、修復步驟、可重跑測試與驗證界線；案例已去識別化。
 
 ## 工程重點
 

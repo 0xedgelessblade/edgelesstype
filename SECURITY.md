@@ -29,3 +29,12 @@ The OpenAI transcription option reuses the encrypted OpenAI key record, independ
 API credentials keep the encrypted-file design above. A separate, user-approved code-signing identity may live in the login Keychain solely to give the local app a stable identity across updates. It is not an API key and is never exported or published. Public CI uses no private signing identity. Local updates require the private signing profile and verify continuity instead of falling back to ad-hoc signatures. See [stable local signing](docs/LOCAL-SIGNING.md).
 
 HTTP session reuse retains connection state, not disk response caches, cookies or credential storage. Audio requests can report numeric upload progress and transaction timings; unavailable timings remain absent. Translation with enabled context correction sends transcript and vocabulary together to the already-selected provider in one request. Runtime timing records contain no transcript, recording, dictionary, key, URL or request ID and must not be published.
+
+
+## Optional recording context and content retention
+
+Recording context is off by default. When enabled, the reader requests a bounded range near the active cursor, without screenshots, HTML, full-document fallback or browsing other windows. Secure/protected fields and unsupported or timed-out queries are skipped. OpenAI mode does not capture nearby text unless audio consent and the separate cloud-context consent are both enabled. Approved context goes only in that recording's OpenAI transcription prompt; it is not separately attached to correction or translation.
+
+Context is kept in memory for one processing job; cancellation and completion reject late capture results. It is not saved as history, diagnostics, fixtures or backups. The old external command-line recognition path does not receive context in process arguments. If prompted terms appear in the transcript, later enabled cloud correction/translation can receive those terms.
+
+Recordings, context, transcripts, personal dictionary entries, credentials and signing keys must never be committed, attached to public issues, uploaded as CI artifacts or preserved for development tests. Use synthetic fixtures only. Temporary audio is removed by normal processing cleanup; this is not a forensic secure-erasure guarantee or a promise about abrupt crashes, operating-system storage, clipboard managers or a cloud provider's retention. No project diagnostics uploader is provided. Report only sanitized fixed outcomes, not content.

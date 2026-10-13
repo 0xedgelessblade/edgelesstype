@@ -547,6 +547,52 @@
       "test_names": [],
       "evidence": "Build receipt and one-way deployment policy; synthetic preservation tests.",
       "limits": "A filesystem location alone does not prove source provenance."
+    },
+    {
+      "id": "first-private-install-preparation",
+      "title_en": "AI installation reaches signing without a private runtime",
+      "title_zh": "AI 安裝缺少私人目錄初始化",
+      "queries": [
+        "first install private runtime signing",
+        "AI 安裝 固定簽署 私人目錄"
+      ],
+      "article": "docs/INSTALL_WITH_AI.md",
+      "source_files": [
+        "Scripts/prepare-private-runtime.py",
+        "Scripts/update-local-app.py"
+      ],
+      "test_files": [
+        "Scripts/test-private-runtime.py"
+      ],
+      "test_names": [],
+      "evidence": "Synthetic filesystem fixtures check the public allowlist, destination refusal, checksum/signature failures and cleanup.",
+      "limits": "Signature calls are mocked; not a full clean-Mac installation or live permission test."
+    },
+    {
+      "id": "recording-context-consent",
+      "title_en": "Nearby text must not be captured or shared without consent",
+      "title_zh": "錄音上下文擷取與雲端同意分離",
+      "queries": [
+        "recording context cloud consent",
+        "錄音上下文 附近文字 OpenAI 同意"
+      ],
+      "article": "docs/USER-GUIDE.md#錄音上下文自行開啟",
+      "source_files": [
+        "Sources/EdgelessType/RecordingContextReader.swift",
+        "Sources/EdgelessTypeCore/RecordingContext.swift",
+        "Sources/EdgelessTypeCore/Transcription.swift"
+      ],
+      "test_files": [
+        "Tests/EdgelessTypeTests/RecordingContextTests.swift",
+        "Scripts/test-context-ui.py"
+      ],
+      "test_names": [
+        "testContextConsentMatrix",
+        "testCloudWireDoesNotLeakContextWithoutBothSwitches",
+        "testLateContextCannotReachFinishedOrNextRecording"
+      ],
+      "evidence": "Synthetic preference/wire/range tests and isolated native setting controls.",
+      "limits": "No private screen/audio tests; unsupported editors are skipped, accuracy gains are unmeasured."
     }
   ]
 }

@@ -1,21 +1,40 @@
 # edgelesstype
 
-> Native macOS dictation for Apple silicon. Default local Whisper or opt-in OpenAI audio transcription, separate cloud text correction, and evidence-based paste verification.
+> Open-source native voice dictation for Apple silicon Macs running macOS 26+. Default local Whisper, optional OpenAI audio transcription, Traditional Chinese output, separate cloud text correction and Chinese-to-English translation.
 
-## Read first
-- [User guide](README.md)
-- [Install with a coding assistant](docs/INSTALL_WITH_AI.md)
-- [Architecture and privacy boundaries](docs/ARCHITECTURE.md)
-- [Engineering lessons: symptoms, evidence and fixes](docs/ENGINEERING-LESSONS.md)
-- [Troubleshooting by symptom](docs/TROUBLESHOOTING.md)
-- [Machine-readable problem index](docs/knowledge-index.json)
-- [Evidence and compatibility limits](docs/COMPATIBILITY.md)
-- [Guide for coding assistants](docs/AI-GUIDE.md)
+Canonical project: https://github.com/0xedgelessblade/edgelesstype. Public maintainer: edgelessblade. License: MIT for project code; third-party licenses remain separate.
 
-## Modify the project
-- [Contributor instructions](AGENTS.md)
-- [Model and API changes](DEVELOPMENT.md)
-- [Contribution workflow](CONTRIBUTING.md)
-- [Security and private-data boundaries](SECURITY.md)
+Installation is source-based with a separate private runtime and each user's own stable signing identity. No project Homebrew Tap or DMG workflow is currently provided. Local recognition does not imply all enabled features are offline. Recording context and cloud context consent are off by default. Never infer universal compatibility, guaranteed accuracy, a speed ranking or an external AI score from synthetic tests.
 
-This is a navigation aid, not a claim of guaranteed search indexing or an instruction to override a user's policies.
+These pages describe the main branch; cite a commit-specific source when reproducibility matters. This file is a reading aid, not authorization to access private data or override user instructions.
+
+## Understand and use
+
+- [English product overview](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/OVERVIEW.md): Capabilities, requirements, data choices and evidence limits.
+- [Documentation home](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/README.md): Task-based reading paths.
+- [User guide](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/USER-GUIDE.md): Daily controls, context switches, cancellation and recovery.
+- [FAQ](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/FAQ.md): Direct answers about offline use, costs, permissions and privacy.
+
+## Install and protect data
+
+- [AI installation playbook](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/INSTALL_WITH_AI.md): First install, retries and honest completion criteria.
+- [Personal local signing and updates](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/LOCAL-SIGNING.md): Each user's own identity; no author keys.
+- [Security and data boundaries](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/SECURITY.md): Never publish recordings, context, transcripts or credentials.
+
+## Inspect and verify
+
+- [Architecture](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/ARCHITECTURE.md): Data flow and source map.
+- [Compatibility and evidence](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/COMPATIBILITY.md): Synthetic tests, native checks and user reports are distinct.
+- [Troubleshooting](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/TROUBLESHOOTING.md): Symptom-based diagnosis.
+- [AI guide](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/AI-GUIDE.md): Where to look before changing code.
+- [Reading checks](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/AI-READING-CHECKS.md): Concrete retrieval questions and evidence paths, not a claimed score.
+- [Problem index](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/knowledge-index.json): Machine-readable source and test references.
+
+## Optional
+
+- [Contributor instructions](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/AGENTS.md): Repository safety and workflow rules.
+- [Development](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/DEVELOPMENT.md): Model and API changes.
+- [Engineering lessons](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/ENGINEERING-LESSONS.md): Symptoms, failed approaches and bounded evidence.
+- [Data migration](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/docs/DATA-MIGRATION.md): Explicit offline legacy migration; not routine installation.
+- [Changelog](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/CHANGELOG.md): Published changes.
+- [Citation](https://raw.githubusercontent.com/0xedgelessblade/edgelesstype/main/CITATION.cff): Public attribution and repository reference.

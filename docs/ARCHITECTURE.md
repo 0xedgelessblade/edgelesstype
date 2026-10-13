@@ -11,6 +11,10 @@ edgelesstype is a native macOS dictation app for Apple silicon. Speech recogniti
 ```mermaid
 flowchart TD
     A[Fn gesture] --> B[Recorder: temporary PCM WAV]
+    A --> Q{Context enabled and permitted for backend?}
+    Q -->|Yes| R[Bounded nearby text in memory; skip unsupported fields]
+    R -->|Local backend| D
+    R -->|OpenAI backend and separate context consent| E
     B --> C{Explicit backend choice}
     C -->|Local default| D[Whisper on this Mac]
     C -->|Saved cloud audio consent| E[OpenAI audio transcription]
@@ -37,6 +41,8 @@ flowchart TD
 | 原生收音與就緒提示音 | [Recorder.swift](../Sources/EdgelessType/Recorder.swift) | 第一段音訊寫入後才播起音；不裁掉開頭，停止後才播結束音 |
 | 聽寫／翻譯狀態決策 | [Session.swift](../Sources/EdgelessTypeCore/Session.swift)、[Policy.swift](../Sources/EdgelessTypeCore/Policy.swift) | Fn+Shift 只開始翻譯，單按 Fn 結束 |
 | 常駐本機辨識 | [ResidentSpeechEngine.swift](../Sources/EdgelessType/ResidentSpeechEngine.swift) | localhost、每次啟動 token、父程序退出後停止 worker |
+| 選用錄音上下文 | [RecordingContextReader.swift](../Sources/EdgelessType/RecordingContextReader.swift)、[RecordingContext.swift](../Sources/EdgelessTypeCore/RecordingContext.swift) | 限制範圍、逾時略過、單次記憶體；雲端另行同意 |
+| 取消處理 | [ProcessingCancellation.swift](../Sources/EdgelessTypeCore/ProcessingCancellation.swift) | 每次工作獨立取消，晚到回覆不得貼入下一筆 |
 | 空白與標點攔截 | [SpeechContent.swift](../Sources/EdgelessTypeCore/SpeechContent.swift) | 不把純標點或已知空白標記當成文字；保留數字、程式碼與 emoji |
 | 上下文校正 | [Vocabulary.swift](../Sources/EdgelessTypeCore/Vocabulary.swift) | 直接採用完整模型回覆；保留成功、完整、非空白檢查及繁體轉換 |
 | 各家 API 協定 | [CloudProvider.swift](../Sources/EdgelessTypeCore/CloudProvider.swift) | 模型集中設定；認證不放 URL；拒絕截斷／拒答結果 |
@@ -51,7 +57,8 @@ flowchart TD
 ## Privacy boundaries
 
 - **錄音**：暫存 PCM WAV。預設交給本機 Whisper；只有明確選擇並同意雲端辨識時，才送至固定 OpenAI 端點。處理後刪除本機暫存檔。
-- **輸入框快照**：僅在本機記憶體用於貼入前後比對，不交給雲端校正。
+- **貼上驗證快照**：僅在本機記憶體用於貼入前後比對，不作為雲端校正輸入。
+- **錄音上下文**：與貼上快照分開。使用者開啟後非同步讀取游標附近最多 160 個 UTF-16 單位，供常駐本機 Whisper；OpenAI 模式須額外同意才擷取並附在轉寫 prompt。原始文字不存檔、不另外傳送校正／翻譯；若被模型帶入逐字稿，後續雲端文字處理可能收到。
 - **雲端文字處理**：轉寫文字、已啟用的字典和固定提示詞。字典的內部 UUID 與空欄位不送出。音訊是否上傳由上一項獨立決定。
 - **API 金鑰**：加密存檔；解密金鑰表留在使用者本機設定目錄。兩者不加入公開來源包。
 - **診斷**：時間、程序狀態及校正結果類型，不保存錄音、轉寫內容或剪貼簿原文。
@@ -67,7 +74,7 @@ flowchart TD
 
 ## Optional first-stage OpenAI transcription
 
-The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`; it never silently falls back to another backend. Both results enter the same final-output pipeline. Dictation can use full-text correction; translation combines enabled correction into its translation request. `Config/transcription.json` stores only the backend choice and audio consent. See [privacy boundaries](../SECURITY.md).
+The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`; it never silently falls back to another backend. Both results enter the same final-output pipeline. Dictation can use full-text correction; translation combines enabled correction into its translation request. `Config/transcription.json` stores the backend choice, audio consent, recording-context preference and separate cloud-context consent, never captured text. See [privacy boundaries](../SECURITY.md).
 
 ## Processing, signing and local updates
 

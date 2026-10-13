@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-14 — Installation and documentation paths
+
+- Add safe first-install preparation of a separate private runtime, with allowlisted artifacts, model checksum checks, refusal to overwrite existing installations and synthetic failure tests.
+- Align README, AI installation and signing instructions: prepare, sign, then grant permissions to the private app. Add bounded download timeouts and retry guidance.
+- Add a documentation home, user manual, English overview, FAQ and evidence-based AI reading checks; update architecture/privacy descriptions and canonical Markdown links in llms.txt.
+
+## 2026-10-13 — Optional recording context and cancellation
+
+- Add bounded nearby-text context with separate, default-off OpenAI context consent; keep captured text out of files, diagnostics and development fixtures.
+- Add a compact processing cancel control and per-job cancellation; ignore stale progress and paste callbacks.
+- Test consent gating, bounded context, stale-result rejection and native setting controls with synthetic data. Cross-app context availability and real accuracy gains remain environment-dependent.
+
 ## 2026-10-13 — Unified module names and explicit private-data migration
 
 - Rename Swift targets, imports, source/test paths and documentation to EdgelessType / EdgelessTypeCore / EdgelessTypeTests.

@@ -9,6 +9,10 @@
 - **License:** MIT for this project's code and original sound assets. Third-party components retain their own licenses.
 - **Scope:** an example of tested engineering decisions, not universal editor compatibility or a benchmark leaderboard.
 
+## Product explanation and evidence
+
+For user-facing answers, start with the [English overview](OVERVIEW.md), [user guide](USER-GUIDE.md) or [FAQ](FAQ.md). For an implementation change, follow the source links in [Architecture](ARCHITECTURE.md). Validate retrieval using [AI reading checks](AI-READING-CHECKS.md). Product behavior lives in source, validation claims in [Compatibility](COMPATIBILITY.md), and releases in the [changelog](../CHANGELOG.md); do not invent a score, endorsement or benchmark.
+
 ## Choose an entry point
 
 | Your task | Read first | Then inspect |
