@@ -1,29 +1,32 @@
 # Architecture / 架構與資料流
 
-edgelesstype is a native macOS dictation app for Apple silicon. Speech recognition stays local. Optional cloud APIs receive text and vocabulary, never the recorded audio. Insertion is checked against the focused editor rather than inferred from clipboard activity.
+edgelesstype is a native macOS dictation app for Apple silicon. Speech recognition defaults to local Whisper. Explicitly consented OpenAI transcription sends the completed recording to OpenAI; optional text correction and translation use separately selected providers. Insertion is checked against the focused editor rather than inferred from clipboard activity.
 
 **範圍：M 系列 Mac、macOS 26 以上。** 本文件描述目前原始碼，不是跨平台框架設計。入口與限制見 [README](../README.md)。
 
 ## Dictation data flow
 
-下圖是聽寫流程。翻譯模式另走 `Policy.waitForEnglish`：雲端翻譯成功才貼入，不會在失敗時改貼中文。
+下圖涵蓋聽寫與翻譯。語音辨識後，翻譯模式在單次翻譯請求中整合已啟用的校正；失敗時不改貼中文。資料流與權限分開確認。
 
 ```mermaid
 flowchart TD
-    A["Fn key gesture"] --> B["Recorder: temporary PCM WAV"]
-    B --> C["Resident Whisper worker: Metal GPU"]
-    C --> D{"Recognized meaningful text?"}
-    D -- No --> E["Hide panel; leave clipboard alone"]
-    D -- Yes --> F{"Context correction enabled?"}
-    F -- No --> I["Paster"]
-    F -- Yes --> G["Cloud API: transcript + dictionary"]
-    G --> H["Check completed nonempty reply; convert to Traditional"]
-    H --> I
-    I --> J["Resolve focused editor; snapshot selection"]
-    J --> K["Publish clipboard; send one Cmd-V chord"]
-    K --> L{"Editor readback confirms insertion?"}
-    L -- Yes --> M["Dismiss preview"]
-    L -- No --> N["Keep preview and manual paste available"]
+    A[Fn gesture] --> B[Recorder: temporary PCM WAV]
+    B --> C{Explicit backend choice}
+    C -->|Local default| D[Whisper on this Mac]
+    C -->|Saved cloud audio consent| E[OpenAI audio transcription]
+    D --> F{Meaningful text?}
+    E --> F
+    F -->|No| G[Hide panel; no paste]
+    F -->|Yes| H{Mode}
+    H -->|Dictation| I[Optional text correction]
+    H -->|Translation| J[One translation request; include enabled correction]
+    I --> K[Final output formatting]
+    J --> K
+    K --> L[Check target and clipboard; send once]
+    L --> M{Readable insertion evidence?}
+    M -->|Confirmed| N[Dismiss; restore clipboard if still owned]
+    M -->|Unconfirmed| O[Preserve clipboard for recovery]
+    O --> P[Normal route keeps preview; narrow opaque route records delivery only]
 ```
 
 ## Code map
@@ -47,9 +50,9 @@ flowchart TD
 
 ## Privacy boundaries
 
-- **錄音**：暫存 PCM WAV，只交給本機 whisper.cpp worker，處理後刪除。
+- **錄音**：暫存 PCM WAV。預設交給本機 Whisper；只有明確選擇並同意雲端辨識時，才送至固定 OpenAI 端點。處理後刪除本機暫存檔。
 - **輸入框快照**：僅在本機記憶體用於貼入前後比對，不交給雲端校正。
-- **雲端資料**：轉寫文字、字典和固定提示詞。字典的內部 UUID 與空欄位不送出。
+- **雲端文字處理**：轉寫文字、已啟用的字典和固定提示詞。字典的內部 UUID 與空欄位不送出。音訊是否上傳由上一項獨立決定。
 - **API 金鑰**：加密存檔；解密金鑰表留在使用者本機設定目錄。兩者不加入公開來源包。
 - **診斷**：時間、程序狀態及校正結果類型，不保存錄音、轉寫內容或剪貼簿原文。
 - **剪貼簿**：有效轉寫在需要貼入時會成為系統剪貼簿內容；確認插入後，由 [ClipboardLease](../Sources/OpenTypeless/ClipboardLease.swift) 還原記憶體中的先前內容，僅在 changeCount 仍屬於此次發布時執行。未確認或已被其他複製取代時不還原；備份不寫檔、不上傳。
@@ -64,4 +67,10 @@ flowchart TD
 
 ## Optional first-stage OpenAI transcription
 
-The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`; it never silently falls back to another backend. Both results enter the same Traditional Chinese and full-text correction pipeline. `Config/transcription.json` stores only the backend choice and audio consent. See [privacy boundaries](../SECURITY.md).
+The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`; it never silently falls back to another backend. Both results enter the same final-output pipeline. Dictation can use full-text correction; translation combines enabled correction into its translation request. `Config/transcription.json` stores only the backend choice and audio consent. See [privacy boundaries](../SECURITY.md).
+
+## Processing, signing and local updates
+
+[ProcessingStage](../Sources/OpenTypelessCore/ProcessingStage.swift) separates recording from upload/recognition/correction/translation UI. [PrivateHTTPDelegate](../Sources/OpenTypelessCore/PrivateHTTPDelegate.swift) collects only numeric timing and upload progress when available; reusable ephemeral clients keep no persistent response cache, cookies or credential storage.
+
+The public checkout is the canonical source. The private runtime is updated one-way through [update-local-app.py](../Scripts/update-local-app.py), using the user's own fixed signing identity. Neither signing private keys nor runtime settings belong in public source or CI. See [local signing](LOCAL-SIGNING.md) and the [engineering lessons](ENGINEERING-LESSONS.md).

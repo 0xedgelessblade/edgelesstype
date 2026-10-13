@@ -6,6 +6,7 @@
 - [User guide](README.md)
 - [Install with a coding assistant](docs/INSTALL_WITH_AI.md)
 - [Architecture and privacy boundaries](docs/ARCHITECTURE.md)
+- [Engineering lessons: symptoms, evidence and fixes](docs/ENGINEERING-LESSONS.md)
 - [Troubleshooting by symptom](docs/TROUBLESHOOTING.md)
 - [Machine-readable problem index](docs/knowledge-index.json)
 - [Evidence and compatibility limits](docs/COMPATIBILITY.md)

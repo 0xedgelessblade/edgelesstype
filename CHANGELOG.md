@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026-10-13 — Stable local updates, processing clarity and engineering guide
 
 - Show distinct recording, upload, recognition, correction and translation states; processing uses a spinner, stage label and elapsed time instead of recording controls.
 - Reuse ephemeral HTTP sessions without caches, cookies or stored credentials; combine enabled text correction with translation in one request while preserving provider and model choices.
@@ -13,8 +13,10 @@
 
 - Remove trailing Chinese/English full stops from final dictation and translation previews and paste text; preserve internal punctuation.
 
-- Add a narrow Grok Bot fallback for editors without readable accessibility focus; send paste once while the original process remains foreground. Live automatic insertion still requires target-app verification.
+- Add a narrow Grok Bot fallback for editors without readable accessibility focus; send paste once while the original process remains foreground. A live success was user-confirmed; broader version/field support remains unverified.
 - Support a distinct local app display name and a one-way updater from public source to a private runtime, preserving personal data and recording build provenance.
+
+- Publish a de-identified [engineering guide](docs/ENGINEERING-LESSONS.md) with diagnosis steps, failed approaches, reproducible checks and explicit evidence limits. Correct outdated architecture statements about optional cloud audio.
 
 Notable changes to edgelesstype. Dates identify source updates; they do not imply a separately packaged binary release.
 

@@ -10,6 +10,7 @@ This is an evidence ledger, not a claim that every field in an application is su
 | Hermes 對話欄 | 開發階段貼入測試與焦點排查 | 該輸入欄當時可貼入；AX setter 成功不能代替結果確認 | Hermes 每個版本或每種編輯元件 |
 | Chrome 的 Google 搜尋欄 | 開發階段實測 | 當時指定搜尋欄可貼入 | 所有 Chrome 網頁及 contenteditable |
 | Muse 訊息欄 | 解析 wrapper focus；測自動、⌘V、Ctrl+V、選取取代與 exact-once | 該欄位的已測情境可用 | 元件重構後仍保證可用 |
+| Grok Bot 對話欄 | 使用者回報自動貼入一次且預覽收起；另有不透明焦點的合成測試 | 被回報的欄位當時可用 | 自動化原生回歸或所有版本認證 |
 | Codex 對話欄 | 使用者回報文字已貼入、提示框消失 | 一次實際使用結果 | 自動化回歸或所有版本認證 |
 | 純邏輯、API fixtures、設定與加密 | 本機測試，無真實雲端金鑰 | 被測程式邏輯與固定協定回覆符合預期 | 所有服務商帳戶與真實線路均已測過 |
 
@@ -17,7 +18,7 @@ This is an evidence ledger, not a claim that every field in an application is su
 
 ## Current validation snapshot
 
-文件整理日期：2026-10-11。當前開發驗證機為 Apple Silicon、macOS 26.5.2。
+文件整理日期：2026-10-13。支援範圍為 Apple silicon、macOS 26 以上；不公開個別使用者的機器識別或私人操作紀錄。下列歷史測試各有自己的驗證範圍。
 
 - 101 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定，另涵蓋長文分段完整性及 9 秒校正回覆等待。
 - 先前延後收音版本：本機 Small／Turbo 人聲偵測合成測試共 18 項通過，含保留短字與小聲語句；兩種輸入模式的無人聲路徑皆未碰剪貼簿或雲端。此測試不使用真實麥克風。另由使用者在喇叭播放提示音的實際環境確認：不說話時不貼字且提示框消失，真正說「謝謝」仍能貼入。
@@ -50,7 +51,7 @@ python3 Scripts/public-check.py --app-only
 
 - 不支援 Intel Mac、Windows 或 Linux。
 - AX text-marker runtime symbols 和目標 App 的可及性樹可能改變。
-- 若 AX value 不可讀，無法以讀回確認插入。Codex 專用替代路徑會在單次按鍵投遞後收框並保留剪貼簿，但不將其記錄為已確認插入。
+- 若 AX value 不可讀，無法以讀回確認插入。Codex／Grok Bot 的精確白名單替代路徑會在單次按鍵投遞後收框並保留剪貼簿，但不將其記錄為已確認插入。
 - 缺少選取範圍時的出現次數比對是較弱證據，不能證明完全正確的位置或沒有額外文字。
 - 主動 focus 變動、剪貼簿被其他操作更換、權限不足時，不應自動重試貼入。
 - Core CI 不會錄音、替使用者點擊輸入框、測試完整桌面 App，或消耗私人 API 額度。
@@ -62,6 +63,13 @@ python3 Scripts/public-check.py --app-only
 
 - 即時收音版：33 項本機合成／串流轉換測試通過，含 16／44.1／48 kHz 首尾取樣、兩模型六組提示音重疊開頭詞測試，以及空白提示框路徑。8 項隔離剪貼簿測試通過；同一程序三次實體錄音啟停通過，第一個緩衝約 178～260 ms，均先收音再播提示音。啟停測試沒有執行 ASR，不能當成真人辨識或雜音抑制已通過。
 
-- 目前正常校正採用完整文字回覆；88 項 Core 測試包含新的全文接收路徑，以及保留作為歷史參考的舊式結構化校正案例。舊式內容拒絕測試不代表正式流程仍執行那些限制。
+- 目前正常校正採用完整文字回覆；先前 88 項 Core 測試快照包含新的全文接收路徑，以及保留作為歷史參考的舊式結構化校正案例。舊式內容拒絕測試不代表正式流程仍執行那些限制。
 
 - OpenAI transcription option: local-default/consent gating, multipart construction, size limits, sanitized errors, Traditional conversion and mocked transport tested locally. Native isolated UI verified local default, refusal to save without consent, and persistence after consent. No real account or private audio was used; actual account/model access remains user-dependent.
+
+## Signed updates and latency work
+
+- Fixed local signing was checked with two different synthetic executables against one certificate-backed requirement. A subsequent native local update satisfied the previous requirement and the app reported successful event-tap creation. These are bounded results, not a guarantee against future OS-policy changes or certificate replacement.
+- Local signing-profile and updater tests use synthetic metadata/files, preserve private sentinel files, reject signer changes and verify rollback behavior. No signing key is required in CI.
+- Processing UI was rendered from native view code with fixed values. Session-reuse routing, combined translation policy and upload progress have local tests; real network speed and translation quality after the optimization require separate non-private live evaluation.
+- Detailed diagnosis and failed approaches: [engineering lessons](ENGINEERING-LESSONS.md).

@@ -458,6 +458,93 @@
       ],
       "evidence": "Core router, consent, request/response and mock transport tests; isolated native settings UI.",
       "limits": "No live API-account or private-recording test; cloud files are limited to 25 MB."
+    },
+    {
+      "id": "signing-stable-local-identity",
+      "title_en": "Permissions lost after each rebuild",
+      "title_zh": "每次重建後權限失效",
+      "queries": [
+        "ad hoc cdhash TCC",
+        "fixed certificate designated requirement",
+        "重建 重新授權"
+      ],
+      "article": "docs/ENGINEERING-LESSONS.md",
+      "source_files": [
+        "Scripts/update-local-app.py",
+        "Scripts/configure-local-signing.py"
+      ],
+      "test_files": [
+        "Scripts/test-local-update.py",
+        "Scripts/test-local-signing-config.py"
+      ],
+      "test_names": [],
+      "evidence": "Synthetic signing metadata/rollback tests; separate cross-build native signature checks and a local update observation.",
+      "limits": "No guarantee that all macOS policy changes or certificate replacements retain permissions."
+    },
+    {
+      "id": "permissions-stale-app-index",
+      "title_en": "Correct app file but missing permission-list entry",
+      "title_zh": "選對 App 卻無法加入權限清單",
+      "queries": [
+        "Spotlight old bundle ID",
+        "LaunchServices TCC application URL",
+        "權限清單 空白 舊識別碼"
+      ],
+      "article": "docs/ENGINEERING-LESSONS.md",
+      "source_files": [
+        "Scripts/update-local-app.py"
+      ],
+      "test_files": [
+        "Scripts/test-local-update.py"
+      ],
+      "test_names": [],
+      "evidence": "A native identity mismatch was observed and resolved after local index/registration refresh; updater calls covered by fixtures.",
+      "limits": "Indexing is asynchronous; reread metadata and verify the real list before claiming success."
+    },
+    {
+      "id": "processing-status-and-latency",
+      "title_en": "Processing looks like recording and latency is not separated",
+      "title_zh": "處理中仍像錄音且耗時未拆分",
+      "queries": [
+        "upload recognition correction latency",
+        "spinner recording stopped",
+        "上傳慢 翻譯慢 波形"
+      ],
+      "article": "docs/ENGINEERING-LESSONS.md",
+      "source_files": [
+        "Sources/OpenTypeless/RecordChrome.swift",
+        "Sources/OpenTypelessCore/ProcessingStage.swift",
+        "Sources/OpenTypelessCore/PrivateHTTPDelegate.swift"
+      ],
+      "test_files": [
+        "Tests/OpenTypelessTests/ProcessingSpeedTests.swift"
+      ],
+      "test_names": [
+        "testTranslationAvoidsASeparateCorrectionRequest",
+        "testTransferProgressDoesNotInventAnUnknownUploadSize"
+      ],
+      "evidence": "Core request-policy/progress tests and native fixed-value UI rendering.",
+      "limits": "No public private-audio benchmark or guaranteed percentage speedup."
+    },
+    {
+      "id": "private-runtime-source-separation",
+      "title_en": "Local executable does not match nearby source",
+      "title_zh": "本機執行檔與旁邊原始碼不一致",
+      "queries": [
+        "wrong local build older UI",
+        "canonical source private runtime",
+        "本機版 公開版 舊介面"
+      ],
+      "article": "docs/ENGINEERING-LESSONS.md",
+      "source_files": [
+        "Scripts/update-local-app.py"
+      ],
+      "test_files": [
+        "Scripts/test-local-update.py"
+      ],
+      "test_names": [],
+      "evidence": "Build receipt and one-way deployment policy; synthetic preservation tests.",
+      "limits": "A filesystem location alone does not prove source provenance."
     }
   ]
 }

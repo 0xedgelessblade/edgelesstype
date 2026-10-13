@@ -15,6 +15,7 @@
 |---|---|---|
 | Install for a user | [Installation playbook](INSTALL_WITH_AI.md) | Platform checks, privacy boundaries, user-controlled permissions, completion evidence |
 | Understand the system | [Architecture](ARCHITECTURE.md) | Source map in that document |
+| Learn the end-to-end debugging method | [Engineering lessons](ENGINEERING-LESSONS.md) | Evidence, failed approaches, signing/index identity and private deployment |
 | Diagnose a similar failure | [Troubleshooting](TROUBLESHOOTING.md) | [Machine-readable index](knowledge-index.json) |
 | Change an API model | [Development guide](../DEVELOPMENT.md) | `CloudProvider.model(for:)`, `CloudWire`, provider tests |
 | Modify this repository | [AGENTS.md](../AGENTS.md) | [Contributing](../CONTRIBUTING.md) |
