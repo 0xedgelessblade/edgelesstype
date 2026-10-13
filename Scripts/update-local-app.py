@@ -109,6 +109,13 @@ def install(source, target, name, revision):
                'binarySHA256': hashlib.sha256(executable.read_bytes()).hexdigest(),
                'privateDataCopied': False}
     (target / 'LOCAL-BUILD.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    # Bundle-level mtime drives Finder/Spotlight identity caching. Updating only
+    # the inner executable/plist can leave permission pickers using the old ID.
+    os.utime(contents, None)
+    os.utime(app, None)
+    subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+                    '-f', str(app)], check=True, capture_output=True)
+    subprocess.run(['/usr/bin/mdimport', '-i', str(app)], check=True, capture_output=True)
     print('Updated local code with a stable signer; private data preserved.')
 
 

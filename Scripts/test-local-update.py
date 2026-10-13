@@ -60,6 +60,8 @@ with tempfile.TemporaryDirectory() as directory:
         module.install(source,target,'Local Edgeless Type','second-build')
         assert any(any(arg.startswith('-R=') for arg in call.args[0]) for call in calls.call_args_list)
         assert all(not ('--sign' in call.args[0] and '-' in call.args[0]) for call in calls.call_args_list)
+        assert any(call.args[0][0]=='/usr/bin/mdimport' for call in calls.call_args_list)
+        assert any(call.args[0][0].endswith('/lsregister') for call in calls.call_args_list)
     print('PASS updates validate the previous certificate-backed identity')
     before=(target_contents/'MacOS/edgelesstype').read_bytes()
     inspected=[0]
