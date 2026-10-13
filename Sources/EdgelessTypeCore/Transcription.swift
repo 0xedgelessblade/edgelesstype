@@ -22,9 +22,23 @@ public enum TranscriptionError: LocalizedError, Equatable {
 public struct TranscriptionPreferences: Codable, Equatable {
     public var backend: TranscriptionBackend
     public var cloudAudioConsent: Bool
-    public init(backend: TranscriptionBackend = .localWhisper, cloudAudioConsent: Bool = false) {
+    public var recordingContextEnabled: Bool
+    public var cloudContextConsent: Bool
+    public init(backend: TranscriptionBackend = .localWhisper, cloudAudioConsent: Bool = false, recordingContextEnabled: Bool = false, cloudContextConsent: Bool = false) {
         self.backend = backend; self.cloudAudioConsent = cloudAudioConsent
+        self.recordingContextEnabled = recordingContextEnabled
+        self.cloudContextConsent = cloudContextConsent
     }
+    private enum CodingKeys: String, CodingKey { case backend, cloudAudioConsent, recordingContextEnabled, cloudContextConsent }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        backend = try values.decode(TranscriptionBackend.self, forKey: .backend)
+        cloudAudioConsent = try values.decode(Bool.self, forKey: .cloudAudioConsent)
+        recordingContextEnabled = try values.decodeIfPresent(Bool.self, forKey: .recordingContextEnabled) ?? false
+        cloudContextConsent = try values.decodeIfPresent(Bool.self, forKey: .cloudContextConsent) ?? false
+    }
+    public var capturesRecordingContext: Bool { recordingContextEnabled && (backend == .localWhisper || (cloudAudioConsent && cloudContextConsent)) }
+
     public func validated() throws -> Self {
         guard backend != .openAI || cloudAudioConsent else { throw TranscriptionError.cloudNotEnabled }
         return self
@@ -58,7 +72,7 @@ public enum TranscriptionRouter {
 public enum OpenAITranscriptionWire {
     public static let model = "gpt-transcribe"
     public static let maximumAudioBytes = 25_000_000
-    public static func request(audio: Data, preferences: TranscriptionPreferences, key: String) throws -> URLRequest {
+    public static func request(audio: Data, preferences: TranscriptionPreferences, key: String, context: String? = nil) throws -> URLRequest {
         guard try preferences.validated().backend == .openAI else { throw TranscriptionError.cloudNotEnabled }
         guard !key.isEmpty else { throw CloudError.missingKey }
         guard !key.unicodeScalars.contains(where: CharacterSet.whitespacesAndNewlines.contains) else { throw CloudError.invalidKey }
@@ -70,7 +84,9 @@ public enum OpenAITranscriptionWire {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
         field("model", model)
-        field("prompt", "這是一段口述轉寫。中文使用繁體，保留原本的英文與標點。")
+        let basePrompt = "這是一段口述轉寫。中文使用繁體，保留原本的英文與標點。"
+        let allowedContext = preferences.capturesRecordingContext && preferences.cloudContextConsent ? context : nil
+        field("prompt", RecordingContext.prompt(terms: basePrompt, context: allowedContext))
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
         body.append(audio)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
@@ -118,9 +134,9 @@ public final class OpenAITranscriptionClient: NSObject, URLSessionTaskDelegate {
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     public func transcribe(audio: Data, preferences: TranscriptionPreferences, key: String,
                            onProgress: ((Double) -> Void)? = nil,
-                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
+                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, context: String? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
         try cancellation?.check()
-        var request = try OpenAITranscriptionWire.request(audio: audio, preferences: preferences, key: key)
+        var request = try OpenAITranscriptionWire.request(audio: audio, preferences: preferences, key: key, context: context)
         let body = request.httpBody!
         request.httpBody = nil
         let gate = DispatchSemaphore(value: 0)

@@ -158,6 +158,14 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 
 介面切換與隔離傳輸測試已驗證；沒有使用真實帳戶金鑰或上傳私人錄音作測試。官方介面：[File transcription](https://developers.openai.com/api/docs/guides/speech-to-text)。
 
+### 錄音上下文（自行開啟）
+
+「語音辨識…」中的「錄音上下文」預設關閉。開啟後，在錄音開始時非同步讀取目前輸入框游標附近最多 160 個 UTF-16 單位的純文字，供常駐本機 Whisper 辨識參考；舊式外部命令列辨識不附加上下文，避免文字出現在程序參數。不截圖、不讀取整份文件、不保存上下文。安全密碼欄位、無法確認的單行欄位及不支援文字範圍查詢的 App 會略過；超時或切换焦點也略過，錄音不等待。
+
+「允許傳送至 OpenAI」是獨立且預設關閉的選項。只有主開關、此選項與雲端錄音同意皆開啟，且選用 OpenAI 辨識時，才會擷取並將附近文字附於轉寫請求的 prompt。若未允許，雲端模式不擷取上下文。原始上下文不另送文字校正／翻譯服務，但若模型把提示文字帶入逐字稿，後續啟用的雲端處理仍可能收到。
+
+關閉主開關並儲存會一併撤銷上下文的雲端傳送同意。內容只供單次錄音使用，取消或錄音結束後拒收晚到的擷取結果。這不是準確度或速度提升保證。
+
 ## Separate public source and private local installation
 
 Maintain code in one Git checkout. Keep the daily app, personal settings, dictionary, models and credentials in a separate private runtime directory. A local app may be named **Local Edgeless Type.app** without changing the public product name. Both names use the same source code.

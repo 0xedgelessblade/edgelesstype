@@ -169,20 +169,21 @@ struct Transcriber {
     let config: AppConfig
     var vocabulary: VocabularySettings? = nil
     var transcription = TranscriptionPreferences()
+    var recordingContext: String?
 
     func transcribe(url: URL, onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
         try cancellation?.check()
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
         return try TranscriptionRouter.run(transcription,
             local: { try localTranscribe(url: url, cancellation: cancellation) },
-            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription, onProgress: onProgress, onTimings: onTimings, cancellation: cancellation) })
+            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription, onProgress: onProgress, onTimings: onTimings, context: recordingContext, cancellation: cancellation) })
     }
 
     private func localTranscribe(url: URL, cancellation: ProcessingCancellation?) throws -> String {
         try cancellation?.check()
         if config.residentSpeech != nil {
             return try ResidentSpeechEngine.shared.transcribe(url: url, config: config,
-                prompt: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms), cancellation: cancellation)
+                prompt: RecordingContext.prompt(terms: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms), context: recordingContext), cancellation: cancellation)
         }
         let vadModel = AppPaths.resolve(SpeechContent.vadModelRelativePath)
         guard FileManager.default.fileExists(atPath: vadModel) else { throw SpeechEngineError.missingSpeechDetector }
@@ -321,6 +322,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var session = Session.idle
     private var busy = false
     private var currentProcessing: ProcessingJob?
+    private var contextCapture: RecordingContext?
     private var explained = false
     private var askedListen = false
     private var toldMissing = false
@@ -568,6 +570,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        contextCapture?.discard(); contextCapture = nil
         currentProcessing?.cancellation.cancel()
         pendingRecordingStart.cancel()
         soundPlayer.cancelPreview()
@@ -691,6 +694,13 @@ final class AppController: NSObject, NSApplicationDelegate {
             ?? VocabularySettings(entries: config.terms.map { VocabularyEntry(word: $0) })
         // Capture the destination at the Fn gesture, before any asynchronous cue.
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        contextCapture?.discard()
+        contextCapture = nil
+        if recordingTranscription.capturesRecordingContext, let pid = targetPID, pid != getpid() {
+            let capture = RecordingContext()
+            contextCapture = capture
+            RecordingContextReader.capture(pid: pid, into: capture)
+        }
         session = mode
         startedAt = nil
         soundPlayer.cancelPreview()
@@ -735,6 +745,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func cancel() {
+        contextCapture?.discard(); contextCapture = nil
         currentProcessing?.cancellation.cancel()
         currentProcessing = nil
         pendingRecordingStart.cancel()
@@ -769,6 +780,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let neverReady = startedAt == nil
         startedAt = nil
         guard let url, !neverReady else {
+            contextCapture?.discard(); contextCapture = nil
             cleanup(url)
             busy = false
             status.button?.title = AppIdentity.displayName
@@ -820,12 +832,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         let vocabulary: VocabularySettings
         let transcription: TranscriptionPreferences
         let targetPID: pid_t?
+        let context: String?
     }
 
     private func launchProcessing(url: URL, mode: Session, timing: DictationTiming) {
-        guard let config else { cleanup(url); busy = false; panel.hide(); return }
+        guard let config else { contextCapture?.discard(); contextCapture = nil; cleanup(url); busy = false; panel.hide(); return }
         let job = ProcessingJob(config: config, vocabulary: recordingVocabulary,
-                                transcription: recordingTranscription, targetPID: targetPID)
+                                transcription: recordingTranscription, targetPID: targetPID, context: contextCapture?.take())
+        contextCapture = nil
         currentProcessing = job
         DispatchQueue.global(qos: .userInitiated).async {
             self.process(url: url, mode: mode, timing: timing, job: job)
@@ -858,7 +872,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard !cancellation.isCancelled else { return }
         let transcript: String
         do {
-            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription).transcribe(url: url,
+            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription, recordingContext: job.context).transcribe(url: url,
                 onProgress: { fraction in
                     self.updateUI(for: job) { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
                 }, onTimings: { timing.audioTransfer = $0 }, cancellation: cancellation))
