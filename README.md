@@ -156,15 +156,15 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 
 ## Separate public source and private local installation
 
-Maintain code in one Git checkout. Keep the daily app, personal settings, dictionary, models and credentials in a separate private runtime directory. A local app may be named **Local edgeless Type.app** without changing the public product name. Both names use the same source code.
+Maintain code in one Git checkout. Keep the daily app, personal settings, dictionary, models and credentials in a separate private runtime directory. A local app may be named **Local Edgeless Type.app** without changing the public product name. Both names use the same source code.
 
 After reviewing changes and quitting the local app, build and update from this repository:
 
 ```sh
 bash Scripts/pack-app.sh
-python3 Scripts/update-local-app.py --target "/path/to/Local edgeless Type"
+python3 Scripts/update-local-app.py --target "/path/to/Local Edgeless Type"
 ```
 
-The target must already contain `Config/app.json` and `Local edgeless Type.app`. This is an updater, not a first-install or folder-migration tool. It copies only the executable, app metadata and fixed public sound/icon assets. It preserves private settings, dictionary, models, credential files and bundled configuration; it never copies local data back into the repository. Code-only backups are non-app files, and `LOCAL-BUILD.json` in the private installation records the source and binary hash. Do not publish this local receipt.
+The target must already contain `Config/app.json` and `Local Edgeless Type.app`. This is an updater, not a first-install or folder-migration tool. It copies only the executable, app metadata and fixed public sound/icon assets. It preserves private settings, dictionary, models, credential files and bundled configuration; it never copies local data back into the repository. Code-only backups are non-app files, and `LOCAL-BUILD.json` in the private installation records the source and binary hash. Do not publish this local receipt.
 
 Do not rebuild stale source left inside a private runtime directory. Use the canonical Git checkout and this updater. macOS may require the user to reapprove permissions after a rebuild or rename; the updater does not change system permissions. Real dictation and destination insertion must still be checked locally.

@@ -78,7 +78,7 @@ def install(source, target, name, revision):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', type=Path, required=True)
-    parser.add_argument('--name', default='Local edgeless Type')
+    parser.add_argument('--name', default='Local Edgeless Type')
     args = parser.parse_args()
     source_binary = ROOT / 'edgelesstype.app/Contents/MacOS/edgelesstype'
     if not source_binary.is_file(): raise ValueError('Build the public-source app first')
