@@ -64,4 +64,16 @@ final class OutputPolicyTests: XCTestCase {
         let result = try OutputPolicy.traditional(String(repeating: unit, count: 2000))
         XCTAssertEqual(result, String(repeating: "簡體中文轉換為繁體，English 123。\n", count: 2000))
     }
+    func testDeliveryRemovesFinalChineseAndEnglishPeriods() throws {
+        XCTAssertEqual(try OutputPolicy.forDelivery("简体测试。"), "簡體測試")
+        XCTAssertEqual(try OutputPolicy.forDelivery("Hello world. \n"), "Hello world")
+        XCTAssertEqual(try OutputPolicy.forDelivery("第一句。第二句。。"), "第一句。第二句")
+        XCTAssertEqual(try OutputPolicy.forDelivery("。 . "), "")
+    }
+    func testDeliveryPreservesInternalPunctuationNumbersAndQuestions() throws {
+        for text in ["3.14", "https://example.com", "真的嗎？", "Great!", "你好，世界", "Wait…"] {
+            XCTAssertEqual(try OutputPolicy.forDelivery(text), text)
+        }
+        XCTAssertEqual(try OutputPolicy.forDelivery("It is 3.14. Done."), "It is 3.14. Done")
+    }
 }

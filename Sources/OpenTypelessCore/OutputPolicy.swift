@@ -15,6 +15,17 @@ public enum OutputPolicy {
         return result
     }
 
+    /// Apply the user's final-output style locally, after correction/translation.
+    /// Leave punctuation inside the text, numbers, questions and exclamations intact.
+    public static func forDelivery(_ text: String) throws -> String {
+        var result = try traditional(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        while result.last == "." || result.last == "。" {
+            result.removeLast()
+            result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return result
+    }
+
     public static func correctionWarning(outcome: String) -> String? {
         if outcome.hasPrefix("rejected:"), let reason = CorrectionRejection(rawValue: String(outcome.dropFirst("rejected:".count))) {
             return reason.explanation + "\n已保留繁體文字，標點可能不完整。"

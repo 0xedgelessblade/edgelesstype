@@ -117,7 +117,10 @@ tests=r'''
    check(Env.editor.value=="簡體測試" && Env.posts==1,"final paste gate converts Simplified output before publishing") }
   Env.reset()
   do { let p=Paster(); p.offer("。",into:123,acceptModelText:true); tick(0.3)
-   check(Env.editor.value=="。" && Env.posts==1,"completed nonempty model text bypasses raw-speech content filtering") }
+   check(Env.editor.value=="" && Env.posts==0,"period-only final output is not pasted") }
+  Env.reset()
+  do { let p=Paster(); p.offer("Hello. 中文。",into:123,acceptModelText:true); tick(0.3)
+   check(Env.editor.value=="Hello. 中文" && Env.posts==1,"paste removes final period without changing internal punctuation") }
   print("PASS all paste lifecycle scenarios (in-memory OS, not a live Codex test)")
  }
 }

@@ -43,7 +43,7 @@ final class Paster {
         diagnosticEvents = []
         lastInsertionConfirmed = false
         trace("offer_started")
-        guard let traditional = try? OutputPolicy.traditional(text) else {
+        guard let traditional = try? OutputPolicy.forDelivery(text) else {
             trace("traditional_conversion_failed")
             return
         }

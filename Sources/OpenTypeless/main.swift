@@ -872,8 +872,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                     timing.saveCorrectionFailure()
                 }
             }
-            guard let text = try? OutputPolicy.traditional(finalText) else {
+            guard let text = try? OutputPolicy.forDelivery(finalText) else {
                 DispatchQueue.main.async { self.panel.showWarning("繁體中文轉換失敗，本次沒有輸出文字。", title: "文字未輸出") }
+                return
+            }
+            guard !text.isEmpty else {
+                DispatchQueue.main.async { self.panel.hide() }
                 return
             }
             timing.timeToPasteReadySeconds = timing.elapsed()
@@ -885,7 +889,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         case .waitForEnglish(let chinese):
             do {
-                let english = try OutputPolicy.traditional(translate(chinese, config: config))
+                let english = try OutputPolicy.forDelivery(translate(chinese, config: config))
                 guard SpeechContent.hasWords(english) else {
                     DispatchQueue.main.async { self.panel.hide() }
                     return
