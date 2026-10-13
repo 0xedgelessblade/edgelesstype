@@ -2,6 +2,35 @@ import XCTest
 @testable import EdgelessTypeCore
 
 final class CloudProviderTests: XCTestCase {
+    func testCancellationStopsAnIndefiniteCloudWait() throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FixtureProtocol.self]
+        FixtureProtocol.delay = 30
+        defer { FixtureProtocol.delay = 0 }
+        let cancellation = ProcessingCancellation()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { cancellation.cancel() }
+        let start = Date()
+        let body = try ContextCorrection.draft(text: "fixture", entries: [], model: "fixture", timeout: .infinity)
+        XCTAssertThrowsError(try CloudClient(configuration: config).complete(body, provider: .openai, purpose: .correction, key: "fixture", cancellation: cancellation)) { error in
+            XCTAssertTrue(error is ProcessingError)
+        }
+        XCTAssertTrue(Date().timeIntervalSince(start) < 2)
+    }
+
+    func testCancellationIsIdempotentAndDoesNotAffectNextRun() throws {
+        let old = ProcessingCancellation(), next = ProcessingCancellation()
+        var calls = 0
+        old.register { calls += 1 }
+        let removed = old.register { calls += 100 }
+        old.unregister(removed)
+        old.cancel(); old.cancel()
+        old.register { calls += 1 }
+        XCTAssertEqual(calls, 2)
+        XCTAssertThrowsError(try old.check())
+        try next.check()
+        XCTAssertFalse(next.isCancelled)
+    }
+
     func testCorrectionWaitsPastFormerEightSecondDeadline() throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [FixtureProtocol.self]

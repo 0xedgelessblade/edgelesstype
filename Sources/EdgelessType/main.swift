@@ -170,17 +170,19 @@ struct Transcriber {
     var vocabulary: VocabularySettings? = nil
     var transcription = TranscriptionPreferences()
 
-    func transcribe(url: URL, onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil) throws -> String {
+    func transcribe(url: URL, onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
+        try cancellation?.check()
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
         return try TranscriptionRouter.run(transcription,
-            local: { try localTranscribe(url: url) },
-            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription, onProgress: onProgress, onTimings: onTimings) })
+            local: { try localTranscribe(url: url, cancellation: cancellation) },
+            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription, onProgress: onProgress, onTimings: onTimings, cancellation: cancellation) })
     }
 
-    private func localTranscribe(url: URL) throws -> String {
+    private func localTranscribe(url: URL, cancellation: ProcessingCancellation?) throws -> String {
+        try cancellation?.check()
         if config.residentSpeech != nil {
             return try ResidentSpeechEngine.shared.transcribe(url: url, config: config,
-                prompt: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms))
+                prompt: Terms.prompt(terms: vocabulary?.entries.map(\.word) ?? config.terms), cancellation: cancellation)
         }
         let vadModel = AppPaths.resolve(SpeechContent.vadModelRelativePath)
         guard FileManager.default.fileExists(atPath: vadModel) else { throw SpeechEngineError.missingSpeechDetector }
@@ -199,8 +201,11 @@ struct Transcriber {
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
         try process.run()
+        let registration = cancellation?.register { if process.isRunning { process.terminate() } }
+        defer { cancellation?.unregister(registration) }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        try cancellation?.check()
         guard process.terminationStatus == 0 else { throw SpeechEngineError.invalidResponse }
         return String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -315,6 +320,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var config: AppConfig?
     private var session = Session.idle
     private var busy = false
+    private var currentProcessing: ProcessingJob?
     private var explained = false
     private var askedListen = false
     private var toldMissing = false
@@ -562,6 +568,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        currentProcessing?.cancellation.cancel()
         pendingRecordingStart.cancel()
         soundPlayer.cancelPreview()
         ResidentSpeechEngine.shared.shutdown()
@@ -657,10 +664,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func handle(_ kind: TapKind) {
-        if busy {
-            panel.showMessage("上一句還在處理")
-            return
-        }
+        // Keep the visible cancel control available while processing.
+        if busy { return }
         let action = Hotkey.decide(session: session, tap: kind)
         switch action {
         case .startDictation:
@@ -730,6 +735,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func cancel() {
+        currentProcessing?.cancellation.cancel()
+        currentProcessing = nil
         pendingRecordingStart.cancel()
         recordingSoundPreset = nil
         soundPlayer.cancelPreview()
@@ -772,9 +779,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let startedTiming = timing
         status.button?.title = mode == .translation ? "譯中" : "轉寫"
         panel.showWorking(recordingTranscription.backend == .openAI ? .uploading : .recognizing)
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.process(url: url, mode: mode, timing: startedTiming)
-        }
+        launchProcessing(url: url, mode: mode, timing: startedTiming)
     }
 
     // Explicit development probe: synthetic PCM only; cloud access is blocked.
@@ -796,7 +801,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             do { try audio.write(to: temp) } catch { return 2 }
             busy = true; panel.showWorking()
             let timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds, mode: "silence-test", model: "test")
-            DispatchQueue.global(qos: .userInitiated).async { self.process(url: temp, mode: mode, timing: timing) }
+            launchProcessing(url: temp, mode: mode, timing: timing)
             let deadline = Date().addingTimeInterval(5)
             while busy && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
             guard !busy, !panel.isVisible, !paster.isOffering, NSPasteboard.general.changeCount == boardCount else {
@@ -809,43 +814,77 @@ final class AppController: NSObject, NSApplicationDelegate {
         return ok ? 0 : 1
     }
 
-    private func process(url: URL, mode: Session, timing: DictationTiming) {
+    private struct ProcessingJob {
+        let cancellation = ProcessingCancellation()
+        let config: AppConfig
+        let vocabulary: VocabularySettings
+        let transcription: TranscriptionPreferences
+        let targetPID: pid_t?
+    }
+
+    private func launchProcessing(url: URL, mode: Session, timing: DictationTiming) {
+        guard let config else { cleanup(url); busy = false; panel.hide(); return }
+        let job = ProcessingJob(config: config, vocabulary: recordingVocabulary,
+                                transcription: recordingTranscription, targetPID: targetPID)
+        currentProcessing = job
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.process(url: url, mode: mode, timing: timing, job: job)
+        }
+    }
+
+    private func updateUI(for job: ProcessingJob, _ update: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            guard self.currentProcessing?.cancellation === job.cancellation,
+                  !job.cancellation.isCancelled else { return }
+            update()
+        }
+    }
+
+    private func process(url: URL, mode: Session, timing: DictationTiming, job: ProcessingJob) {
+        let cancellation = job.cancellation
+        let recordingVocabulary = job.vocabulary
+        let recordingTranscription = job.transcription
+        let config = job.config
         var timing = timing
         let speechStarted = DispatchTime.now().uptimeNanoseconds
         defer {
             cleanup(url)
-            DispatchQueue.main.async {
+            updateUI(for: job) {
                 self.busy = false
+                self.currentProcessing = nil
                 self.status.button?.title = AppIdentity.displayName
             }
         }
-        guard let config else { return }
+        guard !cancellation.isCancelled else { return }
         let transcript: String
         do {
             transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription).transcribe(url: url,
                 onProgress: { fraction in
-                    DispatchQueue.main.async { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
-                }, onTimings: { timing.audioTransfer = $0 }))
+                    self.updateUI(for: job) { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
+                }, onTimings: { timing.audioTransfer = $0 }, cancellation: cancellation))
         } catch {
+            guard !cancellation.isCancelled else { return }
             let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
                 ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
-            DispatchQueue.main.async { self.panel.showWarning(reason, title: "語音辨識未完成") }
+            updateUI(for: job) { self.panel.showWarning(reason, title: "語音辨識未完成") }
             return
         }
+        guard !cancellation.isCancelled else { return }
         timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
         guard SpeechContent.hasWords(transcript) else {
-            DispatchQueue.main.async { self.panel.hide() }
+            updateUI(for: job) { self.panel.hide() }
             return
         }
         let correctionStarted = DispatchTime.now().uptimeNanoseconds
         let corrected: String
         if ProcessingPlan.separateCorrection(mode: mode, enabled: recordingVocabulary.contextCorrectionEnabled) && !transcript.isEmpty {
-            DispatchQueue.main.async { self.status.button?.title = "校正"; self.panel.showWorking(.correcting) }
+            updateUI(for: job) { self.status.button?.title = "校正"; self.panel.showWorking(.correcting) }
             timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
             do {
-                corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config)
+                corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config, cancellation: cancellation)
                 timing.correctionOutcome = corrected == transcript ? "unchanged" : "corrected"
             } catch {
+                guard !cancellation.isCancelled else { return }
                 if let failure = error as? CloudError { timing.correctionOutcome = failure.rawValue }
                 else { timing.correctionOutcome = "request_failed" }
                 timing.saveCorrectionFailure()
@@ -854,12 +893,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         } else {
             corrected = transcript
         }
+        guard !cancellation.isCancelled else { return }
         timing.correctionSeconds = Double(DispatchTime.now().uptimeNanoseconds - correctionStarted)/1e9
         let plan = Policy.plan(mode: mode, transcript: corrected, polishEnabled: config.polish.enabled,
             acceptModelText: ["corrected", "unchanged"].contains(timing.correctionOutcome))
         switch plan {
         case .drop:
-            DispatchQueue.main.async { self.panel.hide() }
+            updateUI(for: job) { self.panel.hide() }
         case .pasteRough(let rough):
             // Submit once. Offering the polish as another paste duplicates
             // text that has already reached the destination.
@@ -868,67 +908,69 @@ final class AppController: NSObject, NSApplicationDelegate {
                Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
                OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
                 do {
-                    DispatchQueue.main.async { self.panel.showWorking(.correcting) }
-                    let polished = try polish(rough, config: config)
+                    updateUI(for: job) { self.panel.showWorking(.correcting) }
+                    let polished = try polish(rough, config: config, cancellation: cancellation)
                     if SpeechContent.hasWords(polished) { finalText = polished }
                 } catch {
+                    guard !cancellation.isCancelled else { return }
                     timing.correctionOutcome = (error as? CloudError)?.rawValue ?? "request_failed"
                     timing.saveCorrectionFailure()
                 }
             }
             guard let text = try? OutputPolicy.forDelivery(finalText) else {
-                DispatchQueue.main.async { self.panel.showWarning("繁體中文轉換失敗，本次沒有輸出文字。", title: "文字未輸出") }
+                updateUI(for: job) { self.panel.showWarning("繁體中文轉換失敗，本次沒有輸出文字。", title: "文字未輸出") }
                 return
             }
             guard !text.isEmpty else {
-                DispatchQueue.main.async { self.panel.hide() }
+                updateUI(for: job) { self.panel.hide() }
                 return
             }
             timing.timeToPasteReadySeconds = timing.elapsed()
             let readyTiming = timing
-            DispatchQueue.main.async {
+            updateUI(for: job) {
                 self.pendingTiming = readyTiming
                 self.panel.showPending(text, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
-                self.paster.offer(text, into: self.targetPID, acceptModelText: ["corrected", "unchanged"].contains(readyTiming.correctionOutcome))
+                self.paster.offer(text, into: job.targetPID, acceptModelText: ["corrected", "unchanged"].contains(readyTiming.correctionOutcome))
             }
         case .waitForEnglish(let chinese):
-            DispatchQueue.main.async { self.status.button?.title = "翻譯"; self.panel.showWorking(.translating) }
+            updateUI(for: job) { self.status.button?.title = "翻譯"; self.panel.showWorking(.translating) }
             let translationStarted = DispatchTime.now().uptimeNanoseconds
             do {
-                let english = try OutputPolicy.forDelivery(translate(chinese, config: config))
+                let english = try OutputPolicy.forDelivery(translate(chinese, config: config, vocabulary: recordingVocabulary, cancellation: cancellation))
                 timing.translationSeconds = Double(DispatchTime.now().uptimeNanoseconds - translationStarted) / 1e9
                 guard SpeechContent.hasWords(english) else {
-                    DispatchQueue.main.async { self.panel.hide() }
+                    updateUI(for: job) { self.panel.hide() }
                     return
                 }
                 timing.timeToPasteReadySeconds = timing.elapsed()
                 let readyTiming = timing
-                DispatchQueue.main.async {
+                updateUI(for: job) {
                     self.pendingTiming = readyTiming
                     self.panel.showPending(english, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
-                    self.paster.offer(english, into: self.targetPID)
+                    self.paster.offer(english, into: job.targetPID)
                 }
             } catch {
+                guard !cancellation.isCancelled else { return }
                 let reason = (error as? CloudError)?.errorDescription ?? "翻譯失敗，請稍後再試。"
-                DispatchQueue.main.async { self.panel.showWarning(reason + "\n本次沒有輸出翻譯文字。", title: "翻譯未完成") }
+                updateUI(for: job) { self.panel.showWarning(reason + "\n本次沒有輸出翻譯文字。", title: "翻譯未完成") }
             }
         }
     }
 
-    private func polish(_ text: String, config: AppConfig) throws -> String {
+    private func polish(_ text: String, config: AppConfig, cancellation: ProcessingCancellation) throws -> String {
         let body = ChatDraft.polish(text: text, timeout: .infinity)
-        return try CloudAccess.complete(body, purpose: .correction)
+        return try CloudAccess.complete(body, purpose: .correction, cancellation: cancellation)
     }
 
-    private func translate(_ text: String, config: AppConfig) throws -> String {
+    private func translate(_ text: String, config: AppConfig, vocabulary: VocabularySettings, cancellation: ProcessingCancellation) throws -> String {
         let body: ChatBody
-        if recordingVocabulary.contextCorrectionEnabled {
-            body = try ContextCorrection.translationDraft(text: text, entries: recordingVocabulary.entries,
+        if vocabulary.contextCorrectionEnabled {
+            body = try ContextCorrection.translationDraft(text: text, entries: vocabulary.entries,
                 timeout: config.translate.timeoutSeconds, reasoningEffort: config.translate.reasoningEffort)
         } else {
             body = ChatDraft.translate(text: text, timeout: config.translate.timeoutSeconds, reasoningEffort: config.translate.reasoningEffort)
         }
-        return try CloudAccess.complete(body, purpose: .translation)
+        return try CloudAccess.complete(body, purpose: .translation, cancellation: cancellation)
     }
 
     private func finishTiming() {

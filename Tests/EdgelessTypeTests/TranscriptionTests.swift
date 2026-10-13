@@ -77,6 +77,20 @@ final class TranscriptionTests: XCTestCase {
             XCTAssertThrowsError(try OpenAITranscriptionWire.parse(Data(body.utf8), status: 200))
         }
     }
+    func testAudioRequestCanBeCancelledWhileWaiting() throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TranscriptionFixtureProtocol.self]
+        TranscriptionFixtureProtocol.hold = true
+        defer { TranscriptionFixtureProtocol.hold = false }
+        let cancellation = ProcessingCancellation()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { cancellation.cancel() }
+        let start = Date()
+        XCTAssertThrowsError(try OpenAITranscriptionClient(configuration: config).transcribe(audio: fixtureAudio, preferences: enabled, key: "fixture", cancellation: cancellation)) { error in
+            XCTAssertTrue(error is ProcessingError)
+        }
+        XCTAssertTrue(Date().timeIntervalSince(start) < 2)
+    }
+
     func testRealClientUsesMockTransportAndBlocksRedirects() throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [TranscriptionFixtureProtocol.self]
         TranscriptionFixtureProtocol.calls = 0
@@ -102,10 +116,12 @@ final class TranscriptionTests: XCTestCase {
 
 private final class TranscriptionFixtureProtocol: URLProtocol {
     static var calls = 0
+    static var hold = false
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.calls += 1
+        if Self.hold { return }
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(#"{"text":"固定转写文字。"}"#.utf8))

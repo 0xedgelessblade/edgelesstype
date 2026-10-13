@@ -51,11 +51,11 @@ final class RecordChrome {
         if case .working = pill.mode {} else { pill.processingStartedAt = Date() }
         pill.mode = .working(stage)
         pill.workingProgress = progress
-        pill.setAccessibilityElement(true)
+        pill.setAccessibilityElement(false)
         pill.setAccessibilityLabel(stage.title + "，錄音已停止")
-        panel.ignoresMouseEvents = true
+        panel.ignoresMouseEvents = false
         startWave()
-        place(width: 260, height: 64)
+        place(width: 280, height: 64)
         panel.orderFrontRegardless()
     }
 
@@ -139,7 +139,36 @@ final class PillView: NSView {
     }
 
     var pendingHint = "文字已備妥；若未出現，請按 ⌘V 貼上。"
-    var mode: Mode = .recording
+    var mode: Mode = .recording {
+        didSet {
+            if case .working = mode { cancelProcessing.isHidden = false }
+            else { cancelProcessing.isHidden = true }
+        }
+    }
+    private let cancelProcessing = NSButton()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        cancelProcessing.isBordered = false
+        cancelProcessing.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消處理")
+        cancelProcessing.contentTintColor = .white
+        cancelProcessing.toolTip = "取消處理"
+        cancelProcessing.setAccessibilityLabel("取消處理")
+        cancelProcessing.target = self
+        cancelProcessing.action = #selector(cancelWork)
+        cancelProcessing.isHidden = true
+        addSubview(cancelProcessing)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        cancelProcessing.frame = NSRect(x: bounds.width - 44, y: (bounds.height - 32) / 2, width: 32, height: 32)
+    }
+
+    @objc private func cancelWork() { onCancel?() }
+
     var phase = 0.0
     var workingProgress: Double?
     var processingStartedAt = Date()
@@ -258,6 +287,8 @@ final class PillView: NSView {
     }
 
     private func drawWorking(_ stage: ProcessingStage) {
+        NSColor(calibratedWhite: 0.18, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: bounds.width - 42, y: (bounds.height - 28) / 2, width: 28, height: 28)).fill()
         let center = NSPoint(x: 27, y: bounds.midY)
         let track = NSBezierPath(ovalIn: NSRect(x: center.x - 10, y: center.y - 10, width: 20, height: 20))
         track.lineWidth = 2.5

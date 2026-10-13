@@ -63,13 +63,19 @@ final class ResidentSpeechEngine {
         try ensureReady(config: config)
     }
 
-    func transcribe(url: URL, config: AppConfig, prompt: String) throws -> String {
+    func transcribe(url: URL, config: AppConfig, prompt: String, cancellation: ProcessingCancellation? = nil) throws -> String {
+        try cancellation?.check()
         operationLock.lock(); defer { operationLock.unlock() }
-        try ensureReady(config: config)
+        try cancellation?.check()
+        try ensureReady(config: config, cancellation: cancellation)
         stateLock.lock()
         let currentPort = port, token = sessionToken
         let pid = worker?.processIdentifier
+        let ownedWorker = worker
         stateLock.unlock()
+        let registration = cancellation?.register { if ownedWorker?.isRunning == true { ownedWorker?.terminate() } }
+        defer { cancellation?.unregister(registration) }
+        try cancellation?.check()
         let boundary = "EdgelessType-" + UUID().uuidString
         var body = Data()
         func field(_ name: String, _ value: String) {
@@ -92,7 +98,7 @@ final class ResidentSpeechEngine {
         request.httpBody = body
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: "X-OpenTypeless-Session")
-        let data = try send(request, timeout: 95)
+        let data = try send(request, timeout: 95, cancellation: cancellation)
         stateLock.lock()
         let stillOurWorker = worker?.processIdentifier == pid && worker?.isRunning == true
         stateLock.unlock()
@@ -116,7 +122,8 @@ final class ResidentSpeechEngine {
         if process?.isRunning == true { process?.terminate() }
     }
 
-    private func ensureReady(config: AppConfig) throws {
+    private func ensureReady(config: AppConfig, cancellation: ProcessingCancellation? = nil) throws {
+        try cancellation?.check()
         guard let resident = config.residentSpeech else { throw SpeechEngineError.unavailable }
         guard FileManager.default.fileExists(atPath: resident.resolvedVADModelPath) else {
             throw SpeechEngineError.missingSpeechDetector
@@ -155,15 +162,18 @@ final class ResidentSpeechEngine {
             self?.readDeviceMetadata(data)
         }
         do { try process.run() } catch { shutdown(); throw error }
+        let registration = cancellation?.register { if process.isRunning { process.terminate() } }
+        defer { cancellation?.unregister(registration) }
         stateLock.lock(); startCount += 1; stateLock.unlock()
         let deadline = Date().addingTimeInterval(60)
         while Date() < deadline {
+            try cancellation?.check()
             stateLock.lock(); let cancelled = stopping; stateLock.unlock()
             guard !cancelled, process.isRunning else { shutdown(); throw SpeechEngineError.unavailable }
             var request = URLRequest(url: URL(string: "http://127.0.0.1:\(newPort)/health")!)
             request.setValue(token, forHTTPHeaderField: "X-OpenTypeless-Session")
             request.timeoutInterval = 0.4
-            if let data = try? send(request, timeout: 0.5),
+            if let data = try? send(request, timeout: 0.5, cancellation: cancellation),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                object["status"] == "ok" {
                 stateLock.lock(); let gpu = metalSeen; stateLock.unlock()
@@ -211,7 +221,8 @@ final class ResidentSpeechEngine {
         return Int(UInt16(bigEndian: address.sin_port))
     }
 
-    private func send(_ request: URLRequest, timeout: TimeInterval) throws -> Data {
+    private func send(_ request: URLRequest, timeout: TimeInterval, cancellation: ProcessingCancellation? = nil) throws -> Data {
+        try cancellation?.check()
         let semaphore = DispatchSemaphore(value: 0)
         let result = SpeechHTTPResult()
         let task = session.dataTask(with: request) { data, response, error in
@@ -220,8 +231,12 @@ final class ResidentSpeechEngine {
             else { result.set(.success(data ?? Data())) }
             semaphore.signal()
         }
+        let registration = cancellation?.register { task.cancel(); semaphore.signal() }
+        defer { cancellation?.unregister(registration) }
+        try cancellation?.check()
         task.resume()
         if semaphore.wait(timeout: .now() + timeout) == .timedOut { task.cancel(); throw URLError(.timedOut) }
+        try cancellation?.check()
         return try result.get().get()
     }
 }

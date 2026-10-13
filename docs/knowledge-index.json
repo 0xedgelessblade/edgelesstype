@@ -508,12 +508,14 @@
       "queries": [
         "upload recognition correction latency",
         "spinner recording stopped",
+        "cancel processing 取消處理 卡住",
         "上傳慢 翻譯慢 波形"
       ],
       "article": "docs/ENGINEERING-LESSONS.md",
       "source_files": [
         "Sources/EdgelessType/RecordChrome.swift",
         "Sources/EdgelessTypeCore/ProcessingStage.swift",
+        "Sources/EdgelessTypeCore/ProcessingCancellation.swift",
         "Sources/EdgelessTypeCore/PrivateHTTPDelegate.swift"
       ],
       "test_files": [

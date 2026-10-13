@@ -181,7 +181,8 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     public func complete(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String,
-                         onModel: ((String?) -> Void)? = nil) throws -> String {
+                         cancellation: ProcessingCancellation? = nil, onModel: ((String?) -> Void)? = nil) throws -> String {
+        try cancellation?.check()
         let request = try CloudWire.request(body, provider: provider, purpose: purpose, key: key)
         let semaphore = DispatchSemaphore(value: 0)
         let box = CloudResultBox()
@@ -191,18 +192,22 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
             } else if let http = response as? HTTPURLResponse, let data {
                 box.value = Result {
                     let text = try CloudWire.parse(data, status: http.statusCode, provider: provider)
-                    onModel?(CloudWire.reportedModel(data, provider: provider))
+                    if cancellation?.isCancelled != true { onModel?(CloudWire.reportedModel(data, provider: provider)) }
                     return text
                 }
             } else { box.value = .failure(CloudError.invalidResponse) }
             semaphore.signal()
         }
+        let registration = cancellation?.register { task.cancel(); semaphore.signal() }
+        defer { cancellation?.unregister(registration) }
+        try cancellation?.check()
         task.resume()
         if body.timeoutSeconds.isFinite {
             guard semaphore.wait(timeout: .now() + body.timeoutSeconds + 1) == .success else { task.cancel(); throw CloudError.timeout }
         } else {
             semaphore.wait()
         }
+        try cancellation?.check()
         return try box.value.get()
     }
 }

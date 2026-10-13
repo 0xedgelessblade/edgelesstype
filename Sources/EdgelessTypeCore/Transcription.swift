@@ -118,7 +118,8 @@ public final class OpenAITranscriptionClient: NSObject, URLSessionTaskDelegate {
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     public func transcribe(audio: Data, preferences: TranscriptionPreferences, key: String,
                            onProgress: ((Double) -> Void)? = nil,
-                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil) throws -> String {
+                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
+        try cancellation?.check()
         var request = try OpenAITranscriptionWire.request(audio: audio, preferences: preferences, key: key)
         let body = request.httpBody!
         request.httpBody = nil
@@ -134,8 +135,12 @@ public final class OpenAITranscriptionClient: NSObject, URLSessionTaskDelegate {
         transport.track(task, progress: onProgress)
         defer { if let value = transport.finish(task) { onTimings?(value) } }
         onProgress?(0)
+        let registration = cancellation?.register { task.cancel(); gate.signal() }
+        defer { cancellation?.unregister(registration) }
+        try cancellation?.check()
         task.resume()
         guard gate.wait(timeout: .now() + 601) == .success else { task.cancel(); throw CloudError.timeout }
+        try cancellation?.check()
         return try box.value.get()
     }
 }

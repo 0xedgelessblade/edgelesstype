@@ -20,7 +20,7 @@ This is an evidence ledger, not a claim that every field in an application is su
 
 文件整理日期：2026-10-13。支援範圍為 Apple silicon、macOS 26 以上；不公開個別使用者的機器識別或私人操作紀錄。下列歷史測試各有自己的驗證範圍。
 
-- 103 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定，另涵蓋長文分段完整性及 9 秒校正回覆等待。
+- 106 個 Core 測試通過；範圍包含事件決策、插入證據、字典、API 格式與回覆、加密紀錄、空白內容及提示音設定，另涵蓋長文分段完整性及 9 秒校正回覆等待。
 - 先前延後收音版本：本機 Small／Turbo 人聲偵測合成測試共 18 項通過，含保留短字與小聲語句；兩種輸入模式的無人聲路徑皆未碰剪貼簿或雲端。此測試不使用真實麥克風。另由使用者在喇叭播放提示音的實際環境確認：不說話時不貼字且提示框消失，真正說「謝謝」仍能貼入。
 - 獨立解壓公開來源 ZIP 後，測試和 App 建置通過。
 - 重新建置的本機引擎以 Small 與 Turbo 轉寫公開測試音檔成功。
@@ -73,3 +73,7 @@ python3 Scripts/public-check.py --app-only
 - Local signing-profile and updater tests use synthetic metadata/files, preserve private sentinel files, reject signer changes and verify rollback behavior. No signing key is required in CI.
 - Processing UI was rendered from native view code with fixed values. Session-reuse routing, combined translation policy and upload progress have local tests; real network speed and translation quality after the optimization require separate non-private live evaluation.
 - Detailed diagnosis and failed approaches: [engineering lessons](ENGINEERING-LESSONS.md).
+
+### 主動取消處理
+
+上傳、辨識、校正與翻譯狀態提供「取消處理」按鈕。取消後關閉面板並中止目前請求；每筆處理保留獨立身分，延遲回覆不可重新顯示或貼上。Core 合成測試涵蓋雲端等待取消及取消身分隔離，未使用私人錄音。取消網路請求不代表服務端已收到的工作或費用一定撤銷。

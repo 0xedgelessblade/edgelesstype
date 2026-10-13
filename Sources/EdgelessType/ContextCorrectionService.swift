@@ -2,14 +2,16 @@ import Foundation
 import EdgelessTypeCore
 
 enum ContextCorrectionService {
-    static func correct(_ text: String, settings: VocabularySettings, config: AppConfig) throws -> String {
+    static func correct(_ text: String, settings: VocabularySettings, config: AppConfig, cancellation: ProcessingCancellation? = nil) throws -> String {
+        try cancellation?.check()
         let entries = ContextCorrection.candidates(in: text, settings: settings)
         guard settings.contextCorrectionEnabled, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         let provider = try CloudAccess.preferences.load().provider
         return try ContextCorrection.correctFullText(text) { chunk in
+            try cancellation?.check()
             let body = try ContextCorrection.draft(text: chunk, entries: entries,
                 model: provider.model(for: .correction), timeout: provider.correctionTimeoutSeconds)
-            return try CloudAccess.complete(body, purpose: .correction)
+            return try CloudAccess.complete(body, purpose: .correction, cancellation: cancellation)
         }
     }
 

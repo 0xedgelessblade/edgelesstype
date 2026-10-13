@@ -10,11 +10,12 @@ enum CloudAccess {
     static func store(_ provider: CloudProvider) -> SecretStore {
         SecretStore(locations: SecretLocations.production(projectRoot: AppPaths.projectRoot()), recordName: provider.rawValue)
     }
-    static func complete(_ body: ChatBody, purpose: CloudPurpose) throws -> String {
+    static func complete(_ body: ChatBody, purpose: CloudPurpose, cancellation: ProcessingCancellation? = nil) throws -> String {
+        try cancellation?.check()
         if offlineProbe { offlineProbeRequests += 1; throw CloudError.invalidRequest }
         let provider = try preferences.load().provider
         let key = String(decoding: try store(provider).readSecret(), as: UTF8.self)
-        return try CloudClient.shared.complete(body, provider: provider, purpose: purpose, key: key) { model in
+        return try CloudClient.shared.complete(body, provider: provider, purpose: purpose, key: key, cancellation: cancellation) { model in
             CloudModelStatus.record(model, provider: provider, purpose: purpose)
         }
     }

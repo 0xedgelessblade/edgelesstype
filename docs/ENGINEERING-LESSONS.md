@@ -235,3 +235,12 @@ git diff --cached --check
 - [Apple：TN2206，Code Signing In Depth](https://developer.apple.com/library/archive/technotes/tn2206/_index.html)
 - [Apple：URLSession body 傳送進度](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/urlsession(_:task:didsendbodydata:totalbytessent:totalbytesexpectedtosend:))
 - [Apple：URLSessionTaskTransactionMetrics](https://developer.apple.com/documentation/foundation/urlsessiontasktransactionmetrics)
+
+
+## 可取消的處理面板
+
+處理中的轉圈圖示不能取代使用者的退出控制。上傳、辨識、校正與翻譯共用右側圓形「取消處理」按鈕，維持黑色圓角面板及藍色進度圖示；按鈕使用原生可及性標籤。
+
+只把面板藏起來會讓背景請求繼續執行，甚至在使用者開始下一筆錄音後貼上舊文字。因此每筆工作都有獨立取消記號、設定快照及目標視窗；取消時中止該筆網路請求或本機辨識程序。所有回到主執行緒的進度、錯誤、貼上與完成回呼，都必須再次核對工作身分。舊工作的清理不得重設新工作的忙碌狀態。
+
+測試以模擬網路等待驗證文字及音訊請求可取消、重複取消不重複執行回呼、取消不影響下一筆工作。另檢查既有貼上流程。這些測試不使用私人錄音、不呼叫實際雲端服務，也不代表雲端已收到的工作或費用能撤銷。
