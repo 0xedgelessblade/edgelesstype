@@ -23,3 +23,6 @@
 - Local updates must retain the dedicated certificate-backed signing identity and bundle ID. Never downgrade to ad-hoc signing, weaken designated requirements to an identifier alone, or reset TCC as a routine update step. Stop before mutation when the local signing profile is missing.
 
 - Module renaming must not change the established signing bundle IDs or speech-worker wire headers/environment keys. Private migration requires verified separated backups, offline credential equality checks and a stopped app; never publish migration journals or backups.
+
+- First installs must prepare a separate new runtime with `Scripts/prepare-private-runtime.py`, then configure the user-approved local signer and run the updater before launch. Never grant daily permissions to the public ad-hoc staging build. Do not recursively copy a checkout or existing private runtime.
+- Never retain a user recording, transcript or captured context as a development fixture, diagnostic attachment or backup. Installation leaves both recording-context switches off.

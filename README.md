@@ -72,14 +72,16 @@ cd edgelesstype
 brew install cmake ffmpeg python3
 bash Scripts/bootstrap.sh
 bash Scripts/pack-app.sh
-open edgelesstype.app
+# 建置後依下方說明建立私人使用目錄並簽署，先不要開啟此公開副本。
 ```
 
 `bootstrap.sh` 會下載固定版本的 whisper.cpp，套用本機服務保護修補，建置 Apple Silicon 引擎，並下載、驗證兩個辨識模型與約 0.9 MB 的 Silero 人聲偵測模型。模型合計約 2.1 GB，只需準備一次。
 
-第一次啟動依提示允許麥克風、輔助使用和輸入監控。開啟權限後如 Fn 尚未啟用，退出 App 再開一次。預設是自行簽署的本地 App，未經 Apple 公證；不需要關閉系統安全保護。
+上方只建立公開測試產物。日常使用請繼續依[安裝指南第 6 節](docs/INSTALL_WITH_AI.md#6-prepare-the-private-runtime-sign-it-then-open-that-app)建立獨立私人使用目錄，再依[本機簽署指南](docs/LOCAL-SIGNING.md)選用或建立自己的固定憑證。首次初始化會複製模型，因此還需要另一份模型的儲存空間。
 
-請保留 App、`Config`、`Models`、`Engine` 在同一份專案資料夾。個人設定第一次安裝時建立，不會加入 Git。
+**只開啟私人目錄裡的 `Local Edgeless Type.app` 並授權它。** 麥克風、輔助使用和輸入監控由本人核准；Fn 尚未啟用時退出後重開。這不是 Apple 公證的發行版，不需要關閉系統安全保護。
+
+私人 App、`Config`、`Models`、`Engine` 保持在同一個私人目錄。後續只用更新工具部署公開程式，不把私人資料同步回 Git。
 
 ## 在 App 設定自己的 API
 

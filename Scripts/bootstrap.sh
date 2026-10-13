@@ -16,7 +16,7 @@ REV=a91dd3be72f70dd1b3cb6e252f35fa17b93f596c
 SOURCE="$ROOT/ThirdParty/whisper-$REV"
 mkdir -p ThirdParty Engine Models Config
 if [[ ! -f "$SOURCE/CMakeLists.txt" ]]; then
-  curl -fL --retry 3 "https://github.com/ggml-org/whisper.cpp/archive/$REV.tar.gz" -o ThirdParty/whisper.tar.gz.part
+  curl -fL --connect-timeout 20 --max-time 1800 --retry 3 --retry-max-time 3600 "https://github.com/ggml-org/whisper.cpp/archive/$REV.tar.gz" -o ThirdParty/whisper.tar.gz.part
   tar -xzf ThirdParty/whisper.tar.gz.part -C ThirdParty
   mv "ThirdParty/whisper.cpp-$REV" "$SOURCE"
   rm ThirdParty/whisper.tar.gz.part
@@ -25,6 +25,7 @@ if [[ ! -f "$SOURCE/.edgelesstype-patched" ]]; then
   patch -d "$SOURCE" -p1 < Patches/whisper-server.patch
   touch "$SOURCE/.edgelesstype-patched"
 fi
+echo "Building the pinned local speech engine…"
 cmake -S "$SOURCE" -B .build/speech -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
   -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+fp16+dotprod \
@@ -39,7 +40,8 @@ fetch_model() {
   local name="$1" expected="$2" target="Models/$1"
   local base_url="${3:-https://huggingface.co/ggerganov/whisper.cpp/resolve/main}"
   if [[ -f "$target" ]] && [[ "$(shasum -a 256 "$target" | cut -d' ' -f1)" == "$expected" ]]; then return; fi
-  curl -fL --retry 3 "$base_url/$name" -o "$target.part"
+  echo "Downloading speech model: $name"
+  curl -fL --connect-timeout 20 --max-time 1800 --retry 3 --retry-max-time 3600 "$base_url/$name" -o "$target.part"
   if [[ "$(shasum -a 256 "$target.part" | cut -d' ' -f1)" != "$expected" ]]; then
     echo "Checksum mismatch: $name" >&2; exit 1
   fi

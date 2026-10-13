@@ -26,6 +26,8 @@ jobs:
         run: python3 Scripts/test-core.py
       - name: Paste lifecycle (in-memory OS)
         run: python3 Scripts/test-paste-flow.py
+      - name: Fresh private runtime (synthetic only)
+        run: python3 Scripts/test-private-runtime.py
       - name: Private local update preservation
         run: python3 Scripts/test-local-update.py
       - name: Local signing configuration (synthetic identities)

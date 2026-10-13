@@ -8,7 +8,7 @@ This guide is for a coding assistant whose user has asked it to install edgeless
 
 Read [AGENTS.md](../AGENTS.md), [README.md](../README.md), [SECURITY.md](../SECURITY.md), and the scripts before running them. Install the existing app; do not redesign it, switch models or providers, enable cloud features, add telemetry, or publish anything as part of installation.
 
-- Work in the user's chosen installation directory. If none is specified, ask once for a location and explain that the app and its supporting folders must stay together. Do not scan unrelated folders to choose a location.
+- Agree on one parent location, then use two separate sibling directories: a public source checkout and a private runtime. If unspecified, ask once. The daily app and its supporting folders stay together in the private runtime. Do not scan unrelated folders to choose a location.
 - Never read, print, decrypt, copy, upload or include in screenshots any API key, private dictionary, recording, transcription, clipboard contents or credential store. In particular, do not inspect `private/`, the local key table, or existing secret environment variables.
 - Do not ask for a key or administrator password in chat, shell arguments, environment variables or a configuration file. The user enters API keys in the app's secure field and system passwords only in the appropriate system prompt.
 - A public clone does not normally require a GitHub login, a paid Apple Developer account, or the author's credentials. Do not request any of these to install this project.
@@ -33,7 +33,7 @@ sw_vers -productVersion
 
 Proceed only with macOS 26 or later and native `arm64` execution on an Apple silicon M-series Mac. If the process reports `x86_64`, do not infer that the hardware is necessarily Intel: it may be running under Rosetta. Check that condition and switch to the user's native arm64 terminal environment before continuing. Stop on unsupported hardware or OS; do not add Intel/CPU-only branches or change the deployment target to bypass the requirement.
 
-Explain that initial setup downloads about 2.1 GB of speech models plus tools, source and build files. Check sufficient free storage locally without exposing volume names or unrelated file listings. Network access is required for setup; microphone recording and local recognition do not require an API key.
+Explain that the current bootstrap always downloads both local recognition models (about 2.1 GB total) plus tools, source and build files; cloud-only or selective-model setup is not implemented. Preparing the separate runtime copies these models, so allow at least another model-sized allocation plus build space. Check sufficient free storage locally without exposing volume names or unrelated file listings. Network access is required for setup; microphone recording and local recognition do not require an API key.
 
 ## 3. Prepare missing tools
 
@@ -71,7 +71,7 @@ Record the revision for the local completion summary. If the destination already
 
 Re-read the checked-out instructions and scripts. The [CI results](https://github.com/0xedgelessblade/edgelesstype/actions) are useful evidence for that revision's source checks, not proof that the user's microphone or target editor works. If installation fails, do not silently switch to an unreviewed fork or an unrelated binary.
 
-## 5. Build locally without personal signing credentials
+## 5. Build and verify public artifacts (do not launch this copy)
 
 Run from the checked-out repository. Keep raw build logs local under the ignored `.build/` directory; these logs can contain local filesystem paths.
 
@@ -88,7 +88,7 @@ After bootstrap succeeds:
 env -u SIGNING_IDENTITY bash Scripts/pack-app.sh > .build/install-logs/build.log 2>&1
 ```
 
-The public build uses ad-hoc signing for tests and CI. For a daily local installation with repeated updates, offer the [personal local signing setup](LOCAL-SIGNING.md) before granting runtime permissions. Each user creates their own identity with explicit consent; never reuse or export the author's certificate/private key, create a Developer ID account, or submit anything for notarization. Installation permission alone does not authorize creating a signing identity. The user handles all Keychain passwords and system approvals. Explain that stable signing avoids a known per-build permission-reset cause, but cannot guarantee that macOS never asks again.
+The public build is an ad-hoc-signed staging artifact for tests and CI, not the daily permission-granted app. Do not open it or grant it runtime permissions. Prepare the separate runtime in the next section before local signing.
 
 Verify each command's exit status and continue only after it succeeds:
 
@@ -102,13 +102,29 @@ These checks use local logic and fixtures; they do not validate real microphone 
 
 If any step fails, use the relevant [troubleshooting case](TROUBLESHOOTING.md). Inspect only the failing step's necessary output. Before exposing an excerpt to a cloud assistant or support destination, remove local home/project paths and review for secrets and personal content. Do not paste a whole raw log, environment dump or directory listing. If safe redaction is uncertain, report the failed step and ask the user to inspect the local log instead. No automatic log sanitizer or report uploader is provided by this guide.
 
-## 6. Open the app and complete user-controlled permissions
+## 6. Prepare the private runtime, sign it, then open that app
+
+For a NEW installation only, choose a nonexistent sibling directory outside the checkout. Replace this placeholder with the location already agreed with the user:
 
 ```sh
-open edgelesstype.app
+python3 Scripts/prepare-private-runtime.py --target "/path/to/private/runtime"
 ```
 
-Keep `edgelesstype.app`, `Config`, `Models` and `Engine` in this same project directory. This source build is not a self-contained drag-to-Applications distribution; moving only the app can break it. The user can keep the running app in the Dock for later use.
+This copies only allowlisted public app files, the speech engine and checksum-verified models. It creates fresh defaults from `Config/app.example.json`, never copies `Config/app.json`, existing preferences, dictionaries, keys, recordings or transcripts from the checkout, and refuses any existing destination. Do not use recursive folder copies to fill this gap. Existing installations use [the update procedure](LOCAL-SIGNING.md#4-後續更新與驗證); legacy data migration is a separate task requiring the user's authorization.
+
+Offer the [personal local signing setup](LOCAL-SIGNING.md) now, before granting runtime permissions. Each user chooses or creates their own identity with explicit consent; never reuse/export the author's certificate or private key. Installation alone does not authorize certificate creation or trust changes. The user handles Keychain passwords and system approval. If they decline, report **build verified; daily signed installation pending**, not full completion. Do not silently open the public build instead.
+
+After the user has selected or created their own identity:
+
+```sh
+python3 Scripts/configure-local-signing.py --target "/path/to/private/runtime"
+python3 Scripts/update-local-app.py --target "/path/to/private/runtime"
+open "/path/to/private/runtime/Local Edgeless Type.app"
+```
+
+Verify every exit status; stop on signer ambiguity or mismatch. The final update signs the prepared app with the stable local bundle ID before its first launch. It keeps later updates on that identity; macOS may still request approval after certificate replacement or policy changes.
+
+Keep `Local Edgeless Type.app`, `Config`, `Models` and `Engine` together in the private runtime. Do not move only the app into Applications. Do not open the public staging copy; the user may keep the private app in the Dock. After verified installation, remove only the generated public staging app if no longer needed, never the private runtime or source.
 
 Guide the user through microphone, Accessibility and Input Monitoring permissions in macOS. Respect all tool handoff requirements; never request a system password in chat. If Fn still does not work after the user grants permissions, quit and reopen this app, then recheck. Do not reset unrelated apps' permissions.
 
@@ -123,7 +139,7 @@ Ask the user to place the cursor in a disposable, empty text editor and perform 
 3. Tap Fn again to stop. Confirm the text appears once and the result panel closes.
 4. If automatic insertion does not occur, use the documented manual paste path and investigate. Never press Enter or send a message as a test.
 
-The main window's **操作指南** explains the shortcuts. Do not activate the microphone or capture other windows without the user's authorization. Do not keep recordings or transcribed test content in reports.
+The main window's **操作指南** explains the shortcuts. Do not activate the microphone or capture other windows without the user's authorization. Do not retain recordings, context or transcribed test content as fixtures, backups, screenshots, reports or logs. Do not upload any of them to GitHub. Tests for development must use artificial fixtures, not the user's voice or screen content.
 
 Only if the user chooses cloud correction or translation:
 
@@ -135,7 +151,24 @@ Only if the user chooses cloud correction or translation:
 
 Without an API key, local dictation can still be complete; mark cloud correction and translation as **not configured / not tested**, not as failed or verified.
 
+### Optional recording context
+
+Leave both **錄音上下文** and **允許傳送至 OpenAI** off during installation. Never enable them or read a real input field just to test setup. Explain the separate audio/context consent if the user later chooses cloud recognition. Do not attach captured context separately to correction or translation requests.
+
+### Retry and later updates
+
+- Missing tools: install only the missing dependency, then repeat that failed step.
+- Interrupted bootstrap/model download: rerun bootstrap; valid model checksums are reused. Do not delete settings or bypass checksums. The current script restarts incomplete downloads rather than promising resume support.
+- Failed build: retain only necessary local build diagnostics; repeat pack-app after the specific issue is resolved. Do not launch a stale app.
+- Existing runtime: never rerun preparation over it. Quit the daily app, review and update the clean source checkout, rebuild, then use `update-local-app.py` with the same runtime and signer. Do not automatically reset permissions or re-create certificates.
+- Missing or ambiguous signer: return to the user's Keychain selection; no ad-hoc fallback.
+- Permission pending: tell the user the exact private app to approve. Do not repeatedly ask them to select the public staging copy.
+
+During long steps report the current stage (engine build, model download/checksum, app build), not invented percentages or silence until completion. Check the existing process/log locally; do not start duplicate installers or add telemetry. Build-log snippets may contain private paths, so summarize outcomes rather than pasting raw output.
+
 ## 8. Report completion honestly
+
+After a successful installation, remove only the installer logs created for this run if no unresolved failure requires them. Never preserve voice/context test material. Do not broadly delete `.build/` or other files belonging to an existing installation.
 
 Return a concise summary, not a diagnostic archive. Use fixed outcomes and a source revision, with no secrets, personal paths, recordings or message content:
 
@@ -144,6 +177,8 @@ Return a concise summary, not a diagnostic archive. Use fixed outcomes and a sou
 | Supported platform | confirmed / unsupported / not checked |
 | Dependencies and model checksums | passed / failed / not checked |
 | App build and self-check | passed / failed / not run |
+| Private runtime and stable signing | verified / pending / failed |
+| Recording context and cloud upload | off / explicitly enabled by user / not checked |
 | App launch and local model readiness | confirmed / failed / not checked |
 | Required permissions | user confirmed / pending |
 | Dictation and insertion | user confirmed / needs troubleshooting / not tested |

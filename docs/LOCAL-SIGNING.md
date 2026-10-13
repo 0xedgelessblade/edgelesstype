@@ -19,7 +19,13 @@
 
 ## 2. 建立本機簽署設定
 
-以下適用於已完成[本機安裝](INSTALL_WITH_AI.md)的使用者。公開原始碼與私人使用目錄必須分開；不要為了符合範例路徑而覆蓋既有資料。私人目錄需保有自己的 `Config/app.json`、模型、引擎與 App。把其中的日常 App 檔名改為 `Local Edgeless Type.app`，不要改動包內檔案。
+首次安裝先依[安裝指南](INSTALL_WITH_AI.md)建置公開產物，再建立全新的私人使用目錄：
+
+```sh
+python3 Scripts/prepare-private-runtime.py --target "/path/to/private/runtime"
+```
+
+工具只複製允許的公開產物及驗證過的模型，產生全新預設設定與 `Local Edgeless Type.app`；此時先不要開啟 App。它拒絕覆蓋既有目錄，不會搬移私人資料。已存在且正常使用的私人安裝請跳過準備步驟，沿用原目錄、App 名稱與既有簽署設定。公開原始碼與私人使用目錄必須分開。
 
 從公開原始碼專案執行；範例路徑請替換成自己的私人使用目錄：
 
