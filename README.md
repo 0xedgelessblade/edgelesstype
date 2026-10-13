@@ -153,3 +153,18 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 「OpenAI 金鑰設定」沿用加密保存的 OpenAI 紀錄，不更改文字校正服務商。雲端單次錄音上限 25 MB；過大時會提示分段錄製或切回本機，不會自動切換辨識服務。API 回覆仍在本機轉為繁體。
 
 介面切換與隔離傳輸測試已驗證；沒有使用真實帳戶金鑰或上傳私人錄音作測試。官方介面：[File transcription](https://developers.openai.com/api/docs/guides/speech-to-text)。
+
+## Separate public source and private local installation
+
+Maintain code in one Git checkout. Keep the daily app, personal settings, dictionary, models and credentials in a separate private runtime directory. A local app may be named **Local edgeless Type.app** without changing the public product name. Both names use the same source code.
+
+After reviewing changes and quitting the local app, build and update from this repository:
+
+```sh
+bash Scripts/pack-app.sh
+python3 Scripts/update-local-app.py --target "/path/to/Local edgeless Type"
+```
+
+The target must already contain `Config/app.json` and `Local edgeless Type.app`. This is an updater, not a first-install or folder-migration tool. It copies only the executable, app metadata and fixed public sound/icon assets. It preserves private settings, dictionary, models, credential files and bundled configuration; it never copies local data back into the repository. Code-only backups are non-app files, and `LOCAL-BUILD.json` in the private installation records the source and binary hash. Do not publish this local receipt.
+
+Do not rebuild stale source left inside a private runtime directory. Use the canonical Git checkout and this updater. macOS may require the user to reapprove permissions after a rebuild or rename; the updater does not change system permissions. Real dictation and destination insertion must still be checked locally.

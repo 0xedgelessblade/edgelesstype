@@ -34,7 +34,7 @@ struct SpeechContent { static func hasWords(_ text: String) -> Bool { !text.isEm
 func AXIsProcessTrusted() -> Bool { true }
 final class NSRunningApplication {
  enum Activation { case activateIgnoringOtherApps }
- var bundleIdentifier: String? { Env.codex ? "com.openai.codex" : "fixture" }
+ var bundleIdentifier: String? { Env.codex ? "com.openai.codex" : (Env.grokBot ? "com.anysphere.sand" : "fixture") }
  let processIdentifier: pid_t
  init?(processIdentifier: pid_t) { self.processIdentifier = processIdentifier }
  func activate(options: [Activation]) {}
@@ -61,11 +61,12 @@ final class CGEvent {
 enum Env {
  static var editor = AXUIElement()
  static var codex = false
+ static var grokBot = false
  static var readable = true
  static var insert = true
  static var posts = 0
  static var restores = 0
- static func reset() { codex = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
+ static func reset() { codex = false; grokBot = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
 }
 func tick(_ seconds: Double) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
 func check(_ value: @autoclosure () -> Bool, _ name: String) { precondition(value(), name); print("PASS \(name)") }
@@ -99,9 +100,15 @@ tests=r'''
   Env.reset(); Env.readable=false; Env.codex=true
   do { let p=Paster(); var hidden=false; p.onDismiss={hidden=true}; p.offer("fixture",into:123); tick(0.25)
    check(Env.posts==1 && Env.editor.value=="fixture" && hidden && !p.isOffering && Env.restores==0 && NSPasteboard.general.text=="fixture","Codex without AX focus auto-pastes once, closes preview, retains clipboard") }
+  Env.reset(); Env.readable=false; Env.grokBot=true
+  do { let p=Paster(); var hidden=false; p.onDismiss={hidden=true}; p.offer("fixture",into:123); tick(0.25)
+   check(Env.posts==1 && Env.editor.value=="fixture" && hidden && !p.isOffering && !p.lastInsertionConfirmed && Env.restores==0 && NSPasteboard.general.text=="fixture","Grok Bot without AX focus pastes once, dismisses, and retains unconfirmed clipboard") }
+  Env.reset(); Env.readable=false; Env.grokBot=true
+  do { let p=Paster(); p.offer("fixture",into:456); tick(0.15)
+   check(Env.posts==0,"Grok Bot fallback never targets a background process"); p.cancelOffer() }
   Env.reset(); Env.readable=false
   do { let p=Paster(); p.offer("fixture",into:123); tick(0.15)
-   check(Env.posts==0 && p.isOffering,"opaque fallback stays restricted to Codex"); p.cancelOffer() }
+   check(Env.posts==0 && p.isOffering,"unknown opaque apps do not auto-paste"); p.cancelOffer() }
   Env.reset(); Env.readable=false; Env.codex=true
   do { let p=Paster(); p.offer("fixture",into:456); tick(0.15)
    check(Env.posts==0,"opaque fallback never posts to a background target"); p.cancelOffer() }

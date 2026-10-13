@@ -22,7 +22,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         self.settings = settings
         let window = NSWindow(contentRect: NSRect(x:0,y:0,width:780,height:612),
             styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = "edgelesstype — 字典"
+        window.title = "\(AppIdentity.displayName) — 字典"
         window.isReleasedWhenClosed = false
         super.init(window:window)
         window.minSize = NSSize(width:720,height:572)

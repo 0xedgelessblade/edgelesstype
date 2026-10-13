@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add a narrow Grok Bot fallback for editors without readable accessibility focus; send paste once while the original process remains foreground. Live automatic insertion still requires target-app verification.
+- Support a distinct local app display name and a one-way updater from public source to a private runtime, preserving personal data and recording build provenance.
+
 Notable changes to edgelesstype. Dates identify source updates; they do not imply a separately packaged binary release.
 
 ## 2026-10-11 — Selectable transcription and full-text correction

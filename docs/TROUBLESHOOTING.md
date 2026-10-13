@@ -197,3 +197,9 @@ The automatic and manual paste paths share the same destination readback. Only c
 Correction rejection now records a fixed `rejected:<reason>` status for invalid JSON, excessive changes, invalid source spans, unchanged replacements, disallowed replacements, invalid occurrences, missing source occurrences, and overlapping edits. The existing acceptance rules are preserved. The warning displays the specific reason in Traditional Chinese.
 
 The latest failure status is saved locally as `Config/last-correction-failure.json`, independently of later successful dictation. It contains only the fixed reason code, provider enum and timestamp; no transcript, model response, dictionary, or key. This runtime file must remain excluded from Git and exports. Historical generic `rejected` records cannot reveal which check failed.
+
+## Paste: Grok Bot opaque input
+
+Grok Bot 0.70.2 (`com.anysphere.sand`) exposed only window/container metadata during inspection. The user reported that manual Cmd+V inserts the text and dismisses the preview. The automatic opaque-focus fallback now includes this exact bundle ID alongside Codex, while requiring the original target to remain the foreground process. It sends one process-targeted Cmd+V, never presses Enter, and retains the dictated clipboard unless insertion is read back. Unknown apps still require a resolved target.
+
+Evidence: in-memory lifecycle tests cover single delivery, dismissal, unconfirmed clipboard retention and background-target rejection. Live automatic delivery after this change still requires a target-app retest; manual success is not proof that the patched build auto-pastes.

@@ -334,7 +334,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var pendingTiming: DictationTiming?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        status.button?.title = "edgelesstype"
+        status.button?.title = AppIdentity.displayName
         installApplicationMenu()
         requestAccessibility()
         panel.onCancel = { [weak self] in
@@ -363,7 +363,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func installApplicationMenu() {
         let bar = NSMenu()
         let applicationItem = NSMenuItem()
-        let applicationMenu = NSMenu(title: "edgelesstype")
+        let applicationMenu = NSMenu(title: AppIdentity.displayName)
         let dictionary = applicationMenu.addItem(withTitle: "字典…", action: #selector(showVocabulary), keyEquivalent: ",")
         dictionary.target = self
         let speech = applicationMenu.addItem(withTitle: "語音辨識…", action: #selector(showTranscriptionSettings), keyEquivalent: "")
@@ -373,7 +373,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let sounds = applicationMenu.addItem(withTitle: "提示音…", action: #selector(showSoundSettings), keyEquivalent: "")
         sounds.target = self
         applicationMenu.addItem(.separator())
-        let quit = applicationMenu.addItem(withTitle: "退出 edgelesstype", action: #selector(quit), keyEquivalent: "q")
+        let quit = applicationMenu.addItem(withTitle: "退出 \(AppIdentity.displayName)", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         applicationItem.submenu = applicationMenu
         bar.addItem(applicationItem)
@@ -548,7 +548,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 try ResidentSpeechEngine.shared.warmUp(config: config)
                 DispatchQueue.main.async {
                     guard self.transcriptionBackend == .localWhisper else { return }
-                    if !self.busy && self.session == .idle { self.status.button?.title = "edgelesstype" }
+                    if !self.busy && self.session == .idle { self.status.button?.title = AppIdentity.displayName }
                     self.vocabularyEditor?.setModelStatus("\(resident.displayName) · Metal GPU · 已常駐")
                 }
             } catch {
@@ -629,17 +629,17 @@ final class AppController: NSObject, NSApplicationDelegate {
             retry?.invalidate()
             retry = nil
             NSApp.setActivationPolicy(.regular)
-            status.button?.title = "edgelesstype"
+            status.button?.title = AppIdentity.displayName
             panel.showMessage("Fn 已啟用")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { self.panel.hide() }
         } else {
             status.button?.title = "語音·未授權"
-            panel.showMessage("Fn 還沒進來。請打開輸入監控裡的「edgelesstype」。")
+            panel.showMessage("Fn 還沒進來。請打開輸入監控裡的「\(AppIdentity.displayName)」。")
             if !toldMissing {
                 toldMissing = true
                 let alert = NSAlert()
                 alert.messageText = "還沒有輸入監控"
-                alert.informativeText = "系統設定要開的是「輸入監控」，不是輔助使用。把「edgelesstype」打開，Fn 才進得來。本機 Whisper 不上傳錄音；只有選用雲端辨識時才傳送至 OpenAI。"
+                alert.informativeText = "系統設定要開的是「輸入監控」，不是輔助使用。把「\(AppIdentity.displayName)」打開，Fn 才進得來。本機 Whisper 不上傳錄音；只有選用雲端辨識時才傳送至 OpenAI。"
                 alert.addButton(withTitle: "打開輸入監控")
                 alert.addButton(withTitle: "先不要")
                 NSApp.setActivationPolicy(.regular)
@@ -720,12 +720,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     guard let self, self.pendingRecordingStart.contains(token), self.session == mode else { return }
                     if allowed { launch() }
-                    else { self.cancel(); self.panel.showMessage("請在系統設定允許 edgelesstype 使用麥克風。") }
+                    else { self.cancel(); self.panel.showMessage("請在系統設定允許 \(AppIdentity.displayName) 使用麥克風。") }
                 }
             }
         default:
             cancel()
-            panel.showMessage("請在系統設定允許 edgelesstype 使用麥克風。")
+            panel.showMessage("請在系統設定允許 \(AppIdentity.displayName) 使用麥克風。")
         }
     }
 
@@ -740,7 +740,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         startedAt = nil
         cleanup(url)
         busy = false
-        status.button?.title = "edgelesstype"
+        status.button?.title = AppIdentity.displayName
         panel.hide()
     }
 
@@ -764,7 +764,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let url, !neverReady else {
             cleanup(url)
             busy = false
-            status.button?.title = "edgelesstype"
+            status.button?.title = AppIdentity.displayName
             panel.hide()
             return
         }
@@ -816,7 +816,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             cleanup(url)
             DispatchQueue.main.async {
                 self.busy = false
-                self.status.button?.title = "edgelesstype"
+                self.status.button?.title = AppIdentity.displayName
             }
         }
         guard let config else { return }

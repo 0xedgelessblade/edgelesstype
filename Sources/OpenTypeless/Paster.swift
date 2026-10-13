@@ -28,6 +28,12 @@ final class Paster {
     }
     private let clipboard = ClipboardLease()
 
+    // Verified opaque editors: ordinary Cmd-V works, but AX may expose no
+    // editable field. Keep this narrow; unknown apps still require a target.
+    private static func supportsOpaquePaste(_ bundleIdentifier: String?) -> Bool {
+        bundleIdentifier == "com.openai.codex" || bundleIdentifier == "com.anysphere.sand"
+    }
+
     init() {
         trace(AXIsProcessTrusted() ? "startup_accessibility_trusted" : "startup_accessibility_not_trusted")
     }
@@ -71,14 +77,15 @@ final class Paster {
             sendPasteChord(token: token)
         } else if !sending,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-                  NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.openai.codex" {
-            // Observed Codex behavior: neither app nor system AX focus is
+                  Self.supportsOpaquePaste(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier) {
+            // Observed Codex/Grok Bot behavior: neither app nor system AX focus is
             // exposed, while the ordinary Cmd-V responder path still works.
             // Deliver once to the original foreground process, exactly as in
             // manual recovery. No focus guessing, click, or AX text setter.
             targetElement = nil
             before = nil
-            trace("codex_opaque_foreground_fallback")
+            trace(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.anysphere.sand"
+                ? "grok_bot_opaque_foreground_fallback" : "codex_opaque_foreground_fallback")
             sendPasteChord(token: token, opaqueAutomatic: true)
         } else if attempts > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
@@ -148,7 +155,7 @@ final class Paster {
               let up = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false),
               let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false) else { return }
         if opaqueAutomatic {
-            guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.openai.codex",
+            guard Self.supportsOpaquePaste(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier),
                   targetElement == nil else { return }
         }
         if let element = targetElement {
@@ -180,7 +187,7 @@ final class Paster {
             self.sending = false
             guard self.generation == token else { return }
             if manual || opaqueAutomatic {
-                // Opaque Codex delivery has no readable insertion evidence.
+                // Opaque editor delivery has no readable insertion evidence.
                 // Close the preview after the single chord, retain dictated
                 // clipboard text, and record delivery rather than confirmation.
                 self.finishManualPaste(manual: manual)
@@ -258,11 +265,11 @@ final class Paster {
 
     private static func pasteTarget(in pid: pid_t) -> AXUIElement? {
         if let editor = focusedElement(in: pid) { return editor }
-        // Codex may expose a focused wrapper instead of its editable child.
+        // Supported opaque apps may expose a wrapper instead of an editor.
         // Cmd-V still goes through the target app's normal responder chain.
         // Require the same foreground PID and AX focus immediately before
         // delivery; never click the wrapper or infer successful insertion.
-        guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.openai.codex" else { return nil }
+        guard Self.supportsOpaquePaste(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier) else { return nil }
         return rawFocus(in: pid)
     }
 

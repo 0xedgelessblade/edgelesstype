@@ -17,3 +17,5 @@
 - Run `python3 Scripts/check-docs.py` after documentation edits. Do not claim hosted CI, general accuracy or universal editor compatibility from local evidence.
 
 - OpenAI audio transcription is an explicit opt-in first-stage option. Keep local Whisper as the default, require saved audio consent, do not change the text-correction provider when managing the transcription key, and never upload private audio for development tests.
+
+- Keep the public Git checkout as the canonical source. Update a separate private runtime only with reviewed code/assets using `Scripts/update-local-app.py`; never sync private runtime folders back to Git. Do not rebuild legacy source merely because it sits beside the running app. Local display names come from bundle metadata. Test local updates with synthetic files using `Scripts/test-local-update.py`.
