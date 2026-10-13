@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-13 — Unified module names and explicit private-data migration
+
+- Rename Swift targets, imports, source/test paths and documentation to EdgelessType / EdgelessTypeCore / EdgelessTypeTests.
+- Move normal credential storage to v2 authenticated-encryption envelopes and new data filenames. Preserve provider records and key material through a tested offline one-time migration, with key-table backups separate from encrypted-data backups.
+- Preserve installed signing IDs, certificate identity and the existing speech-worker protocol. Keep legacy names only where required by these stable contracts or the explicit migration reader.
+- Add prepare/finalize/rollback tools and synthetic migration tests; no private data or signing keys are included.
+
+
 ## 2026-10-13 — Stable local updates, processing clarity and engineering guide
 
 - Show distinct recording, upload, recognition, correction and translation states; processing uses a spinner, stage label and elapsed time instead of recording controls.

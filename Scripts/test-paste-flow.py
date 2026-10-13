@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 root=Path(__file__).resolve().parent.parent
 out=root/'.build/paste-flow'; out.mkdir(parents=True,exist_ok=True)
-source=(root/'Sources/OpenTypeless/Paster.swift').read_text().replace('import AppKit','import Foundation\nimport CoreFoundation').replace('import OpenTypelessCore','')
+source=(root/'Sources/EdgelessType/Paster.swift').read_text().replace('import AppKit','import Foundation\nimport CoreFoundation').replace('import EdgelessTypeCore','')
 # Compile the real lifecycle and event scheduling against an in-memory OS.
 # No event is posted to macOS; no application or real clipboard is accessed.
 source=source.replace('edgelesstype-paste-diagnostic.json','edgelesstype-test-paste-diagnostic.json')
@@ -127,5 +127,5 @@ tests=r'''
 '''
 files=[out/'Shim.swift',out/'Paster.swift',out/'Tests.swift']
 for p,s in zip(files,[shim,source,tests]):p.write_text(s)
-subprocess.run(['swiftc','-module-cache-path',str(root/'.build/core-tests/modules'),str(root/'Sources/OpenTypelessCore/PasteConfirmation.swift'),str(root/'Sources/OpenTypelessCore/OutputPolicy.swift'),*map(str,files),'-o',str(out/'tests')],check=True)
+subprocess.run(['swiftc','-module-cache-path',str(root/'.build/core-tests/modules'),str(root/'Sources/EdgelessTypeCore/PasteConfirmation.swift'),str(root/'Sources/EdgelessTypeCore/OutputPolicy.swift'),*map(str,files),'-o',str(out/'tests')],check=True)
 subprocess.run([str(out/'tests')],check=True)

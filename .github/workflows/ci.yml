@@ -30,6 +30,8 @@ jobs:
         run: python3 Scripts/test-local-update.py
       - name: Local signing configuration (synthetic identities)
         run: python3 Scripts/test-local-signing-config.py
+      - name: Private data migration (synthetic only)
+        run: python3 Scripts/test-data-migration.py
       - name: Documentation references
         run: python3 Scripts/check-docs.py
       - name: Build locally signed app

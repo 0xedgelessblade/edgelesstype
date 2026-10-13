@@ -77,12 +77,7 @@ def main():
         original['residentSpeech'][name] = str(root / original['residentSpeech'][name])
     app = dest / 'edgelesstype.app'
     source_app = root / 'edgelesstype.app'
-    if not source_app.exists():
-        source_app = root / 'OpenTypeless.app'
     shutil.copytree(source_app, app)
-    old_executable = app / 'Contents/MacOS/OpenTypeless'
-    if old_executable.exists():
-        old_executable.unlink()
     shutil.copy2(root / '.build/release/edgelesstype', app / 'Contents/MacOS/edgelesstype')
     for folder in ['Config', 'Engine', 'Models', 'Licenses']:
         (dest / folder).mkdir()

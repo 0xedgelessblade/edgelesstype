@@ -33,20 +33,20 @@ flowchart TD
 
 | 責任 | 程式碼 | 修改時需保留的條件 |
 |---|---|---|
-| App 狀態、Fn 事件、錄音生命週期 | [main.swift](../Sources/OpenTypeless/main.swift) | event-tap callback 先返回；錄音停止後清理暫存檔 |
-| 原生收音與就緒提示音 | [Recorder.swift](../Sources/OpenTypeless/Recorder.swift) | 第一段音訊寫入後才播起音；不裁掉開頭，停止後才播結束音 |
-| 聽寫／翻譯狀態決策 | [Session.swift](../Sources/OpenTypelessCore/Session.swift)、[Policy.swift](../Sources/OpenTypelessCore/Policy.swift) | Fn+Shift 只開始翻譯，單按 Fn 結束 |
-| 常駐本機辨識 | [ResidentSpeechEngine.swift](../Sources/OpenTypeless/ResidentSpeechEngine.swift) | localhost、每次啟動 token、父程序退出後停止 worker |
-| 空白與標點攔截 | [SpeechContent.swift](../Sources/OpenTypelessCore/SpeechContent.swift) | 不把純標點或已知空白標記當成文字；保留數字、程式碼與 emoji |
-| 上下文校正 | [Vocabulary.swift](../Sources/OpenTypelessCore/Vocabulary.swift) | 直接採用完整模型回覆；保留成功、完整、非空白檢查及繁體轉換 |
-| 各家 API 協定 | [CloudProvider.swift](../Sources/OpenTypelessCore/CloudProvider.swift) | 模型集中設定；認證不放 URL；拒絕截斷／拒答結果 |
-| 金鑰與服務商 UI | [APISettingsWindow.swift](../Sources/OpenTypeless/APISettingsWindow.swift)、[SecretStore.swift](../Sources/OpenTypelessCore/SecretStore.swift) | 每家分開保存，錯誤不顯示原始回應或金鑰 |
-| 寫入與結果確認 | [Paster.swift](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation.swift](../Sources/OpenTypelessCore/PasteConfirmation.swift) | 不以 AX setter 回傳值或剪貼簿讀取當作成功 |
-| 被 wrapper 隱藏的游標 | [WebKitFocus.swift](../Sources/OpenTypeless/WebKitFocus.swift) | 可選的 runtime symbols；找不到時不可按 wrapper 按鈕碰運氣 |
-| 非搶焦點提示框 | [RecordChrome.swift](../Sources/OpenTypeless/RecordChrome.swift) | 不成為 key/main window |
-| 三種提示音與記憶選擇 | [SoundSettings.swift](../Sources/OpenTypelessCore/SoundSettings.swift)、[SoundPlayer.swift](../Sources/OpenTypeless/SoundPlayer.swift) | 同次錄音使用同一組開始／結束音；試聽可取消 |
+| App 狀態、Fn 事件、錄音生命週期 | [main.swift](../Sources/EdgelessType/main.swift) | event-tap callback 先返回；錄音停止後清理暫存檔 |
+| 原生收音與就緒提示音 | [Recorder.swift](../Sources/EdgelessType/Recorder.swift) | 第一段音訊寫入後才播起音；不裁掉開頭，停止後才播結束音 |
+| 聽寫／翻譯狀態決策 | [Session.swift](../Sources/EdgelessTypeCore/Session.swift)、[Policy.swift](../Sources/EdgelessTypeCore/Policy.swift) | Fn+Shift 只開始翻譯，單按 Fn 結束 |
+| 常駐本機辨識 | [ResidentSpeechEngine.swift](../Sources/EdgelessType/ResidentSpeechEngine.swift) | localhost、每次啟動 token、父程序退出後停止 worker |
+| 空白與標點攔截 | [SpeechContent.swift](../Sources/EdgelessTypeCore/SpeechContent.swift) | 不把純標點或已知空白標記當成文字；保留數字、程式碼與 emoji |
+| 上下文校正 | [Vocabulary.swift](../Sources/EdgelessTypeCore/Vocabulary.swift) | 直接採用完整模型回覆；保留成功、完整、非空白檢查及繁體轉換 |
+| 各家 API 協定 | [CloudProvider.swift](../Sources/EdgelessTypeCore/CloudProvider.swift) | 模型集中設定；認證不放 URL；拒絕截斷／拒答結果 |
+| 金鑰與服務商 UI | [APISettingsWindow.swift](../Sources/EdgelessType/APISettingsWindow.swift)、[SecretStore.swift](../Sources/EdgelessTypeCore/SecretStore.swift) | 每家分開保存，錯誤不顯示原始回應或金鑰 |
+| 寫入與結果確認 | [Paster.swift](../Sources/EdgelessType/Paster.swift)、[PasteConfirmation.swift](../Sources/EdgelessTypeCore/PasteConfirmation.swift) | 不以 AX setter 回傳值或剪貼簿讀取當作成功 |
+| 被 wrapper 隱藏的游標 | [WebKitFocus.swift](../Sources/EdgelessType/WebKitFocus.swift) | 可選的 runtime symbols；找不到時不可按 wrapper 按鈕碰運氣 |
+| 非搶焦點提示框 | [RecordChrome.swift](../Sources/EdgelessType/RecordChrome.swift) | 不成為 key/main window |
+| 三種提示音與記憶選擇 | [SoundSettings.swift](../Sources/EdgelessTypeCore/SoundSettings.swift)、[SoundPlayer.swift](../Sources/EdgelessType/SoundPlayer.swift) | 同次錄音使用同一組開始／結束音；試聽可取消 |
 
-模組路徑保留早期的 `OpenTypeless` 名稱；對外產品名稱為 **edgelesstype**。
+模組名稱統一為 `EdgelessType`、`EdgelessTypeCore` 與 `EdgelessTypeTests`；產品名稱為 **edgelesstype**。既有 App 識別碼及本機語音引擎通訊欄位是保留的相容性契約，不是待改名的 Swift 模組。
 
 ## Privacy boundaries
 
@@ -55,7 +55,7 @@ flowchart TD
 - **雲端文字處理**：轉寫文字、已啟用的字典和固定提示詞。字典的內部 UUID 與空欄位不送出。音訊是否上傳由上一項獨立決定。
 - **API 金鑰**：加密存檔；解密金鑰表留在使用者本機設定目錄。兩者不加入公開來源包。
 - **診斷**：時間、程序狀態及校正結果類型，不保存錄音、轉寫內容或剪貼簿原文。
-- **剪貼簿**：有效轉寫在需要貼入時會成為系統剪貼簿內容；確認插入後，由 [ClipboardLease](../Sources/OpenTypeless/ClipboardLease.swift) 還原記憶體中的先前內容，僅在 changeCount 仍屬於此次發布時執行。未確認或已被其他複製取代時不還原；備份不寫檔、不上傳。
+- **剪貼簿**：有效轉寫在需要貼入時會成為系統剪貼簿內容；確認插入後，由 [ClipboardLease](../Sources/EdgelessType/ClipboardLease.swift) 還原記憶體中的先前內容，僅在 changeCount 仍屬於此次發布時執行。未確認或已被其他複製取代時不還原；備份不寫檔、不上傳。
 
 細節與發布邊界見 [SECURITY.md](../SECURITY.md)。
 
@@ -71,6 +71,6 @@ The speech backend is selected separately from text correction. The default uses
 
 ## Processing, signing and local updates
 
-[ProcessingStage](../Sources/OpenTypelessCore/ProcessingStage.swift) separates recording from upload/recognition/correction/translation UI. [PrivateHTTPDelegate](../Sources/OpenTypelessCore/PrivateHTTPDelegate.swift) collects only numeric timing and upload progress when available; reusable ephemeral clients keep no persistent response cache, cookies or credential storage.
+[ProcessingStage](../Sources/EdgelessTypeCore/ProcessingStage.swift) separates recording from upload/recognition/correction/translation UI. [PrivateHTTPDelegate](../Sources/EdgelessTypeCore/PrivateHTTPDelegate.swift) collects only numeric timing and upload progress when available; reusable ephemeral clients keep no persistent response cache, cookies or credential storage.
 
 The public checkout is the canonical source. The private runtime is updated one-way through [update-local-app.py](../Scripts/update-local-app.py), using the user's own fixed signing identity. Neither signing private keys nor runtime settings belong in public source or CI. See [local signing](LOCAL-SIGNING.md) and the [engineering lessons](ENGINEERING-LESSONS.md).

@@ -4,7 +4,7 @@
 
 ## 換成同一家的另一個模型
 
-1. 修改 `Sources/OpenTypelessCore/CloudProvider.swift` → `CloudProvider.model(for:)`。可以分開指定校正與翻譯。
+1. 修改 `Sources/EdgelessTypeCore/CloudProvider.swift` → `CloudProvider.model(for:)`。可以分開指定校正與翻譯。
 2. 查該模型官方文件，檢查 `CloudWire.request` 中的推理、溫度、輸出長度與 JSON Schema 參數；不能只假設所有模型都接受相同參數。
 3. 更新 `CloudProviderTests.swift` 對模型與請求格式的斷言。
 4. 執行 `python3 Scripts/test-core.py`、`bash Scripts/pack-app.sh`。

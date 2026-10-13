@@ -115,7 +115,7 @@ UI 刻意只提供四家服務商，不做大型模型目錄。模型可用性�
 
 > 請讀 AGENTS.md，把 OpenAI 的預設模型換成我指定的模型。查核該模型的官方 API 參數，更新測試，保持 UI 簡單，不要讀取或輸出我的金鑰。
 
-模型名稱集中在 `Sources/OpenTypelessCore/CloudProvider.swift` 的 `model(for:)`。同檔的 `CloudWire` 處理各家的請求與回覆，UI 不需要跟著重寫。完整修改步驟見 [DEVELOPMENT.md](DEVELOPMENT.md)。
+模型名稱集中在 `Sources/EdgelessTypeCore/CloudProvider.swift` 的 `model(for:)`。同檔的 `CloudWire` 處理各家的請求與回覆，UI 不需要跟著重寫。完整修改步驟見 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ## 字典、提示音與隱私
 
@@ -123,7 +123,7 @@ UI 刻意只提供四家服務商，不做大型模型目錄。模型可用性�
 
 開始／結束提示音是本專案生成的低音量柔和音色，沒有外部採樣；可用 `python3 Scripts/make-sounds.py` 重建。
 
-每位使用者的金鑰密文儲存在自己專案的 `private/store.encrypted.json`；解密鑰匙在自己 Mac 的 `~/.config/codex-secrets/open-typeless-keyring.json`。後者是沿用的本機目錄名稱，不是 Codex 雲端。兩者都不公開；呼叫 API 時才以 HTTPS 向所選服務商提供金鑰認證。詳見 [安全說明](SECURITY.md)。
+每位使用者的金鑰密文儲存在自己專案的 `private/credentials.encrypted.json`；解密鑰匙在自己 Mac 的 `~/.config/codex-secrets/edgelesstype-keyring.json`。後者是沿用的本機目錄名稱，不是 Codex 雲端。兩者都不公開；呼叫 API 時才以 HTTPS 向所選服務商提供金鑰認證。詳見 [安全說明](SECURITY.md)。
 
 公開版不含開發者的金鑰、個人設定、使用紀錄、錄音、編譯 App 或私人字典。文字校正／翻譯送出轉寫文字與字典；只有明確選用 OpenAI 雲端語音辨識並同意後，才傳送錄音。其他視窗內容與剪貼簿驗證資料不上傳。OpenAI Responses 文字請求設定 `store: false`；音訊 API 不沿用該參數。服務商自身的資料政策另依其規定。
 
@@ -172,3 +172,5 @@ python3 Scripts/update-local-app.py --target "/path/to/Local Edgeless Type"
 The target must already contain `Config/app.json`, `Local Edgeless Type.app`, and a private `LOCAL-SIGNING.json` profile. See [stable local signing](docs/LOCAL-SIGNING.md). This is an updater, not a first-install or folder-migration tool. It copies only the executable, app metadata and fixed public sound/icon assets. It preserves private settings, dictionary, models, credential files and bundled configuration; it never copies local data back into the repository. Code-only backups are non-app files, and `LOCAL-BUILD.json` in the private installation records the source and binary hash. Do not publish this local receipt.
 
 Do not rebuild stale source left inside a private runtime directory. Use the canonical Git checkout and this updater. The first migration to the dedicated local signing identity requires user approval of macOS permissions. Later updates must satisfy the previous certificate-backed designated requirement; the updater refuses ad-hoc fallback or an identity change. This prevents a known cause of repeated prompts, but does not override macOS policy or guarantee permissions survive every OS change. Real dictation and destination insertion must still be checked locally.
+
+已有舊版私人資料的安裝，更新前請先依[一次性資料遷移指南](docs/DATA-MIGRATION.md)建立分離備份與驗證；不要直接用新 App 覆蓋後猜測資料是否相容。

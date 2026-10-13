@@ -8,17 +8,19 @@ let package = Package(
         .macOS("26.0")
     ],
     products: [
-        .executable(name: "edgelesstype", targets: ["OpenTypeless"])
+        .executable(name: "edgelesstype", targets: ["EdgelessType"]),
+        .executable(name: "edgelesstype-data-migrate", targets: ["EdgelessTypeMigration"])
     ],
     targets: [
-        .target(name: "OpenTypelessCore"),
+        .target(name: "EdgelessTypeCore"),
         .executableTarget(
-            name: "OpenTypeless",
-            dependencies: ["OpenTypelessCore"]
+            name: "EdgelessType",
+            dependencies: ["EdgelessTypeCore"]
         ),
+        .executableTarget(name: "EdgelessTypeMigration", dependencies: ["EdgelessTypeCore"]),
         .testTarget(
-            name: "OpenTypelessTests",
-            dependencies: ["OpenTypelessCore"]
+            name: "EdgelessTypeTests",
+            dependencies: ["EdgelessTypeCore"]
         )
     ]
 )

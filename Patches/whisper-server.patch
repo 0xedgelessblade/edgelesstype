@@ -14,7 +14,7 @@
      std::unique_ptr<httplib::Server> svr = std::make_unique<httplib::Server>();
      std::atomic<server_state> state{SERVER_STATE_LOADING_MODEL};
  
-+    // OpenTypeless: private loopback service, owned by one app process.
++    // EdgelessType: private loopback service, owned by one app process.
 +    // The random per-launch token is inherited in memory, never persisted.
 +    const char * token_env = std::getenv("OPEN_TYPELESS_SESSION_TOKEN");
 +    const std::string session_token = token_env ? token_env : "";

@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory() as directory:
         for name in ('AppIcon.icns','start.wav','stop.wav','soft-start.wav','soft-stop.wav','low-start.wav','low-stop.wav'):
             (contents / 'Resources' / name).write_bytes(b'public asset')
     preserved = {}
-    for name in ('Config/app.json','Config/vocabulary.json','Config/transcription.json','private/store.encrypted.json',
+    for name in ('Config/app.json','Config/vocabulary.json','Config/transcription.json','private/credentials.encrypted.json',
                  'Models/example.bin','Sources/legacy.swift','Local Edgeless Type.app/Contents/Resources/app.json'):
         p = target / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b'synthetic private sentinel'); preserved[p] = p.read_bytes()
     (target / 'LOCAL-SIGNING.json').write_text(json.dumps({'bundleIdentifier':module.LOCAL_ID,'identitySHA1':'a'*40}))

@@ -37,3 +37,6 @@ __pycache__/
 /LOCAL-BUILD.json
 *.pfx
 *.p8
+
+/LOCAL-DATA.json
+/.private-backups/

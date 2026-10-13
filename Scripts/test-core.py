@@ -19,13 +19,13 @@ func XCTAssertNotNil<T>(_ a: @autoclosure () throws -> T?, file: StaticString=#f
 func XCTAssertThrowsError<T>(_ a: @autoclosure () throws -> T, _ handler: (Error)->Void = {_ in}, file: StaticString=#file, line: UInt=#line) { do { _ = try a(); failure(file,line) } catch { handler(error) } }
 '''
 sources, calls = [], []
-for path in sorted((root/'Tests/OpenTypelessTests').glob('*.swift')):
-    text = path.read_text().replace('import XCTest', '').replace('@testable import OpenTypelessCore', '').replace(': XCTestCase', '')
+for path in sorted((root/'Tests/EdgelessTypeTests').glob('*.swift')):
+    text = path.read_text().replace('import XCTest', '').replace('@testable import EdgelessTypeCore', '').replace(': XCTestCase', '')
     name = re.search(r'final class (\w+)', text).group(1)
     sources.append(text)
     for method, throws in re.findall(r'func (test\w+)\(\)(\s+throws)?\s*\{', text):
         calls.append(('try ' if throws else '') + f'{name}().{method}(); print("PASS {method}")')
 runner = build/'RunTests.swift'
 runner.write_text(helpers+'\n'.join(sources)+'\n@main struct Runner { static func main() throws {\n'+'\n'.join(calls)+f'\nprint("Passed {len(calls)} tests")\n'+'}}\n')
-subprocess.run(['swiftc','-module-cache-path',str(build/'modules'), *map(str, sorted((root/'Sources/OpenTypelessCore').glob('*.swift'))),str(runner),'-o',str(build/'tests')],check=True)
+subprocess.run(['swiftc','-module-cache-path',str(build/'modules'), *map(str, sorted((root/'Sources/EdgelessTypeCore').glob('*.swift'))),str(runner),'-o',str(build/'tests')],check=True)
 subprocess.run([str(build/'tests')],check=True)

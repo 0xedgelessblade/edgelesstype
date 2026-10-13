@@ -1,6 +1,6 @@
 # 隱私與金鑰
 
-API 金鑰使用 AES-256-GCM 保存於 `private/store.encrypted.json`。本機加密金鑰表位於使用者的 `~/.config/codex-secrets/open-typeless-keyring.json`，資料夾權限 700、檔案權限 600。兩者均不得加入公開 repository。
+API 金鑰使用 AES-256-GCM 保存於 `private/credentials.encrypted.json`。本機加密金鑰表位於使用者的 `~/.config/codex-secrets/edgelesstype-keyring.json`，資料夾權限 700、檔案權限 600。兩者均不得加入公開 repository。
 
 每家服務商有獨立的隨機紀錄，切換或刪除一家不會覆蓋其他家。讀不到、損壞或不配對的密文不能自動覆寫。App 不使用明碼 `.env`、日誌或 macOS 鑰匙圈存放 API 金鑰。
 

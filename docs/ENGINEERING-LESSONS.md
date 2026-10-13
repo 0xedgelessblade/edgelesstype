@@ -57,7 +57,7 @@
 - 不斷重試 Cmd+V：可能造成延遲的雙重貼上。
 - 把替代路徑開放給所有 App：會把已知相容性擴大成沒有證據的焦點猜測。
 
-程式：[Paster](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation](../Sources/OpenTypelessCore/PasteConfirmation.swift)。測試：[貼上生命週期](../Scripts/test-paste-flow.py)。某個採用網頁介面的聊天客戶端，其自動貼上與收框有使用者實際成功回報；本文不列個別測試者的軟體清單，也不將這項回報寫成所有版本、所有欄位的自動化認證。
+程式：[Paster](../Sources/EdgelessType/Paster.swift)、[PasteConfirmation](../Sources/EdgelessTypeCore/PasteConfirmation.swift)。測試：[貼上生命週期](../Scripts/test-paste-flow.py)。某個採用網頁介面的聊天客戶端，其自動貼上與收框有使用者實際成功回報；本文不列個別測試者的軟體清單，也不將這項回報寫成所有版本、所有欄位的自動化認證。
 
 ## 3. 同名 App 太多，重建後反而出現舊功能
 
@@ -174,7 +174,7 @@ mdls -name kMDItemCFBundleIdentifier -name kMDItemDisplayName "/path/to/YourDict
 
 後續評估請使用相同模型、相近長度的非敏感語句，分開比較冷連線與重用連線，多次記錄中位數與尾端等待；一次快或慢不足以建立結論。真實雲端測試需要使用者明確允許傳送該測試內容，fixtures 本身不呼叫雲端。
 
-程式：[PrivateHTTPDelegate](../Sources/OpenTypelessCore/PrivateHTTPDelegate.swift)、[Transcription](../Sources/OpenTypelessCore/Transcription.swift)、[ProcessingPlan](../Sources/OpenTypelessCore/ProcessingStage.swift)。測試：[ProcessingSpeedTests](../Tests/OpenTypelessTests/ProcessingSpeedTests.swift)。
+程式：[PrivateHTTPDelegate](../Sources/EdgelessTypeCore/PrivateHTTPDelegate.swift)、[Transcription](../Sources/EdgelessTypeCore/Transcription.swift)、[ProcessingPlan](../Sources/EdgelessTypeCore/ProcessingStage.swift)。測試：[ProcessingSpeedTests](../Tests/EdgelessTypeTests/ProcessingSpeedTests.swift)。
 
 ## 7. 停止錄音後還像在錄音，是介面狀態錯誤
 
@@ -195,7 +195,7 @@ mdls -name kMDItemCFBundleIdentifier -name kMDItemDisplayName "/path/to/YourDict
 
 介面渲染檢查可以只用固定文字，不必截取私人桌面或字典。渲染通過仍不代表已驗證真實麥克風／網路的時序。
 
-程式：[RecordChrome](../Sources/OpenTypeless/RecordChrome.swift)、[main](../Sources/OpenTypeless/main.swift)。句尾格式統一在 [OutputPolicy](../Sources/OpenTypelessCore/OutputPolicy.swift) 的最終輸出處理：去除最末尾中英句點，保留中間標點；不靠修改模型提示詞來猜測是否遵守。
+程式：[RecordChrome](../Sources/EdgelessType/RecordChrome.swift)、[main](../Sources/EdgelessType/main.swift)。句尾格式統一在 [OutputPolicy](../Sources/EdgelessTypeCore/OutputPolicy.swift) 的最終輸出處理：去除最末尾中英句點，保留中間標點；不靠修改模型提示詞來猜測是否遵守。
 
 ## 8. 如何把修正公開，又不公開私人環境
 

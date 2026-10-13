@@ -41,6 +41,9 @@ def install(source, target, name, revision):
         raise ValueError('Invalid local app name')
     if source.resolve() == target.resolve() or source.resolve() in target.resolve().parents:
         raise ValueError('Choose a separate private runtime directory')
+    legacy = target / 'private/store.encrypted.json'
+    if legacy.exists() and not (target / 'LOCAL-DATA.json').exists():
+        raise ValueError('Prepare the explicit v2 private-data migration before updating')
     signer = load_signer(target)  # Fail before changing any app files.
     if not (target / 'Config/app.json').is_file():
         raise ValueError('Target must be an existing configured local installation')

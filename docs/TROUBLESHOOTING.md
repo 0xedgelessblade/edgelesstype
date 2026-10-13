@@ -12,7 +12,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 正常路徑改用實際剪貼簿文字與按鍵貼入，再讀回目標內容；不以 `AXSelectedText` setter 成功作為退出提示框的依據。
 
-**程式與驗證：** [Paster.offer](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmationTests](../Tests/OpenTypelessTests/PasteConfirmationTests.swift) 的 `testWebSetterFalseSuccessDoesNotDismiss`。純政策測試可重現「內容沒變，不能判成功」；真實目標仍須另測。
+**程式與驗證：** [Paster.offer](../Sources/EdgelessType/Paster.swift)、[PasteConfirmationTests](../Tests/EdgelessTypeTests/PasteConfirmationTests.swift) 的 `testWebSetterFalseSuccessDoesNotDismiss`。純政策測試可重現「內容沒變，不能判成功」；真實目標仍須另測。
 
 ## Paste: clipboard read not proof
 
@@ -22,7 +22,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 先實際發布字串，不依賴延遲供應；以目標快照確認插入。記錄 `changeCount` 用來避免接管使用者後來複製的內容，不把它當成功訊號。目標文字讀回確認貼入後才還原舊剪貼簿；取消或未確認則保留語音文字。還原前再次檢查 changeCount，使用者後來複製的內容不覆蓋。備份僅在記憶體，保留多個項目與格式；超過 64 MiB、無法取得完整資料或快照期間被改變時，不作不完整還原。
 
-**程式與驗證：** [Paster](../Sources/OpenTypeless/Paster.swift)、[PasteConfirmation](../Sources/OpenTypelessCore/PasteConfirmation.swift)。輸入框原文未改變時不得收起提示框。這項原則本身不會解決失焦或不相容的按鍵投遞。
+**程式與驗證：** [Paster](../Sources/EdgelessType/Paster.swift)、[PasteConfirmation](../Sources/EdgelessTypeCore/PasteConfirmation.swift)。輸入框原文未改變時不得收起提示框。這項原則本身不會解決失焦或不相容的按鍵投遞。
 
 ## Paste: wrapper focus
 
@@ -32,7 +32,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 依序檢查直接可編輯元件、editable ancestor，再嘗試以選取文字標記找出游標所在元件和其可編輯祖先。正常路徑不掃描整段聊天，不點傳送按鈕，不直接寫 AX 選取文字。亦沿著巢狀 focus 與文字葉節點的 parent 尋找 editor，限制深度與節點數並排除循環。當 Codex 僅暴露焦點 wrapper，允許向相同前景程序、相同焦點投遞一次 Cmd+V；若完全不提供 AX 焦點，則限 Codex 仍為原本前景程序時投遞一次 Cmd+V。wrapper 或按鍵送出不是已插入的證據。讀回另支援 attributed value 與 AXStringForRange。本機階段診斷已確認 Codex 缺少 AX 焦點、手動按鍵路徑可用。使用者已在實際 Codex 輸入框確認自動貼上與收框成功；本機狀態亦記錄一次自動按鍵投遞及收框。手動貼上後收框也已由使用者確認。此證據限當次使用者環境，不代表其他版本或所有輸入欄位皆相容。
 
-**程式與驗證：** [WebKitFocus](../Sources/OpenTypeless/WebKitFocus.swift)、[Paster.focusedElement](../Sources/OpenTypeless/Paster.swift)。手動把游標放在可丟棄的空白輸入欄後，執行 `focus-probe <bundle-id> --summary`，只觀察是否解析出 editor 和字數。
+**程式與驗證：** [WebKitFocus](../Sources/EdgelessType/WebKitFocus.swift)、[Paster.focusedElement](../Sources/EdgelessType/Paster.swift)。手動把游標放在可丟棄的空白輸入欄後，執行 `focus-probe <bundle-id> --summary`，只觀察是否解析出 editor 和字數。
 
 **限制：** 部分 text-marker symbols 不是穩定的公開 SDK 契約。程式以 `dlsym` 和型別檢查選用；無法取得時返回失敗，而不是假裝支援。OS 或目標 App 更新後需重測。可參考 [Hammerspoon 的 text-marker 實作](https://github.com/Hammerspoon/hammerspoon/blob/master/extensions/axuielement/axtextmarker.m)，但不要把別人的支援範圍直接當成自己的測試結果。
 
@@ -44,7 +44,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 在確認前景 PID 和焦點仍相同後，使用 `postToPid` 投遞一組 Command/V 按下與放開事件。放鍵採非阻塞排程；即使取消這次輸入也仍釋放按鍵。不因確認逾時就自動重送。
 
-**程式與驗證：** [Paster.sendPasteChord](../Sources/OpenTypeless/Paster.swift)、[PasteProbe](../Sources/OpenTypeless/PasteProbe.swift) 的 `exactlyOnce` 比對。測空白欄位、已有文字、選取取代和手動補貼。
+**程式與驗證：** [Paster.sendPasteChord](../Sources/EdgelessType/Paster.swift)、[PasteProbe](../Sources/EdgelessType/PasteProbe.swift) 的 `exactlyOnce` 比對。測空白欄位、已有文字、選取取代和手動補貼。
 
 **限制：** 這是當次測試有效的投遞方式，不證明每個重複貼上問題都源自 HID，也不代表每個 App 都接受相同方式。
 
@@ -56,7 +56,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** callback 只做必要判斷並迅速返回；延後到主佇列重新解析焦點、取得快照、投遞貼上與驗證。以事件標記排除自己送出的鍵，並確認剪貼簿尚未被使用者換成別的內容。使用者明確按下手動貼上後，送完按鍵即收起提示框；此動作是使用者確認收起，不宣稱貼入成功。只有讀回證實插入才還原舊剪貼簿；否則保留語音文字供再次手動貼上。一般自動貼上須讀回確認才收起；Codex 無 AX 焦點的替代路徑在單次按鍵送完後收起，保留語音剪貼簿，並將結果記為未讀回確認，不記錄成已確認貼入耗時。
 
-**程式與驗證：** [HotkeyMonitor](../Sources/OpenTypeless/main.swift)、[Paster.notePasteKey](../Sources/OpenTypeless/Paster.swift)。開發測試命令有 `paste-probe <bundle-id> manual-command` 和 `manual-control`，只貼固定句、不按 Enter。輸入欄應由測試者先聚焦；不要自動點疑似傳送按鈕。
+**程式與驗證：** [HotkeyMonitor](../Sources/EdgelessType/main.swift)、[Paster.notePasteKey](../Sources/EdgelessType/Paster.swift)。開發測試命令有 `paste-probe <bundle-id> manual-command` 和 `manual-control`，只貼固定句、不按 Enter。輸入欄應由測試者先聚焦；不要自動點疑似傳送按鈕。
 
 ## Paste: UTF-16 offsets
 
@@ -64,7 +64,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** AX 選取範圍使用 UTF-16。計算預期插入結果時，用 `NSString` 的長度及 range 操作，不把 Swift 的使用者可見字元數直接當偏移。先驗證 location/length 合法，保留周圍文字。
 
-**程式與驗證：** [PasteConfirmation](../Sources/OpenTypelessCore/PasteConfirmation.swift)、[PasteConfirmationTests](../Tests/OpenTypelessTests/PasteConfirmationTests.swift) 的 `testChineseInsertedAtUTF16CursorAfterEmoji` 及無效範圍測試。
+**程式與驗證：** [PasteConfirmation](../Sources/EdgelessTypeCore/PasteConfirmation.swift)、[PasteConfirmationTests](../Tests/EdgelessTypeTests/PasteConfirmationTests.swift) 的 `testChineseInsertedAtUTF16CursorAfterEmoji` 及無效範圍測試。
 
 **限制：** 有些目標根本不提供選取範圍，不能憑空合成一個精確游標位置。
 
@@ -74,7 +74,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 錄音／轉寫提示框使用 nonactivating panel，明確禁止成為 key 或 main window。貼入前仍要檢查前景程序與實際焦點；不能只相信錄音開始時捕捉的目標。
 
-**程式與驗證：** [RecordChrome](../Sources/OpenTypeless/RecordChrome.swift)、[Paster](../Sources/OpenTypeless/Paster.swift)。在 disposable 輸入欄放好游標，顯示提示框後執行固定句貼入測試。字典、API 和提示音設定視窗可以主動取得焦點，不能與被動的錄音提示框混為一談。
+**程式與驗證：** [RecordChrome](../Sources/EdgelessType/RecordChrome.swift)、[Paster](../Sources/EdgelessType/Paster.swift)。在 disposable 輸入欄放好游標，顯示提示框後執行固定句貼入測試。字典、API 和提示音設定視窗可以主動取得焦點，不能與被動的錄音提示框混為一談。
 
 **限制：** 其他 App、系統權限對話框或使用者主動切換仍可能改變焦點；此設定不是全系統焦點鎖。
 
@@ -86,7 +86,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 對錄音器的 PCM16 WAV 辨識真正的數位靜音；無法解析的格式不猜測為靜音。ASR 之後再攔截空白、純標點和已知空白標記；`Paster.offer` 另有防線。無有效文字時關閉提示框，不改剪貼簿。數字、帶字母的程式碼與 emoji 仍可保留。
 
-**程式與驗證：** [SpeechContent](../Sources/OpenTypelessCore/SpeechContent.swift)、[SpeechContentTests](../Tests/OpenTypelessTests/SpeechContentTests.swift)。`silence-probe <silent-pcm16.wav>` 會複製輸入，驗證兩種模式的提示框及剪貼簿版本號，不讀剪貼簿原文。
+**程式與驗證：** [SpeechContent](../Sources/EdgelessTypeCore/SpeechContent.swift)、[SpeechContentTests](../Tests/EdgelessTypeTests/SpeechContentTests.swift)。`silence-probe <silent-pcm16.wav>` 會複製輸入，驗證兩種模式的提示框及剪貼簿版本號，不讀剪貼簿原文。
 
 **限制：** 數位靜音判斷不是完整 VAD；背景噪音與提示音造成的有字幻覺，另由下方的人聲偵測與錄音時序處理。
 
@@ -98,7 +98,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 精簡的整句語境規則，搭配有區別力的少量對照。詞語修正回傳 `from/to/occurrence`，由本機驗證短詞、位置、字典或同音關係；不直接接受全文改寫。同一個請求可回傳 `punctuated`，但只能在已驗證的文字上插入標點；原有文字、空白與標點必須保留，並保護英文 token、網址、路徑與反引號程式碼。將新案例放進測試，而不是持續增長提示詞。
 
-**程式與驗證：** [ContextCorrection](../Sources/OpenTypelessCore/Vocabulary.swift)、[VocabularyTests](../Tests/OpenTypelessTests/VocabularyTests.swift)。例：修正「家人抬官抗議」，同時保留「台灣官員抗議不公平待遇」；修正麥克風權限，同時保留捷運全線通車。提示詞有 550 字元上限測試。
+**程式與驗證：** [ContextCorrection](../Sources/EdgelessTypeCore/Vocabulary.swift)、[VocabularyTests](../Tests/EdgelessTypeTests/VocabularyTests.swift)。例：修正「家人抬官抗議」，同時保留「台灣官員抗議不公平待遇」；修正麥克風權限，同時保留捷運全線通車。提示詞有 550 字元上限測試。
 
 **限制：** 測試集通過不是一般準確率。音近判斷與 LLM 都可能失誤；日誌只存結果類型，不保存原文。
 
@@ -108,7 +108,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 模型由本機 worker 常駐，切換模型才重新預載；只允許 loopback，使用每次啟動的隨機 token，父程序退出後停止 worker。確認 Metal backend 真正啟用，不只檢查程序存在。
 
-**程式與驗證：** [ResidentSpeechEngine](../Sources/OpenTypeless/ResidentSpeechEngine.swift)、[worker patch](../Patches/whisper-server.patch)。分開量測預載、辨識、雲端校正與貼入；不要把不含錄音時間的推論數字稱為完整體驗延遲。
+**程式與驗證：** [ResidentSpeechEngine](../Sources/EdgelessType/ResidentSpeechEngine.swift)、[worker patch](../Patches/whisper-server.patch)。分開量測預載、辨識、雲端校正與貼入；不要把不含錄音時間的推論數字稱為完整體驗延遲。
 
 **限制：** 沒有跨所有 M 系列、記憶體與系統版本的完整效能資料，不能從一台機器推導所有人的秒數。
 
@@ -118,7 +118,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **本專案解法：** 為四家分開建構 endpoint、認證、請求和回覆解析；固定精簡預設模型，避免 UI 變成大型目錄。拒絕截斷或拒答，忽略 reasoning/thinking 區塊；不把原始錯誤 body 印給使用者。測試包含各家的傳輸流程、失敗解析與每家金鑰隔離。
 
-**程式與驗證：** [CloudProvider](../Sources/OpenTypelessCore/CloudProvider.swift)、[CloudProviderTests](../Tests/OpenTypelessTests/CloudProviderTests.swift)、[更換模型指南](../DEVELOPMENT.md)。模型改名不代表參數仍相容，必須查該模型官方文件。
+**程式與驗證：** [CloudProvider](../Sources/EdgelessTypeCore/CloudProvider.swift)、[CloudProviderTests](../Tests/EdgelessTypeTests/CloudProviderTests.swift)、[更換模型指南](../DEVELOPMENT.md)。模型改名不代表參數仍相容，必須查該模型官方文件。
 
 ## Release: personal paths
 
@@ -138,7 +138,7 @@ For coding assistants: find the matching symptom, inspect the linked code, and r
 
 **解法：** 在同一次上下文校正加入 `punctuated`；原生 JSON schema 要求該欄位存在並允許 null，本機解析仍相容舊回覆缺欄位。先驗證詞語修正，再驗證僅插入句讀標點。模型若在新增逗號處省略原有空格，本機先補回原空格；其他空白變動不接受。非法改寫保留合法詞語修正。無文字仍不請求、不貼上。提示詞維持 550 字元限制。移除校正原先 4 秒／8 秒的應用程式期限；CloudClient 等待完成或實際網路／服務端錯誤。長文以約 1200 字元分段，優先句界，保留技術詞、網址與程式碼完整；每段仍經相同詞語與標點驗證，最後一次合併貼入。總長度不因分段而截斷。
 
-**程式與驗證：** [SentencePunctuation](../Sources/OpenTypelessCore/SentencePunctuation.swift)、[tests](../Tests/OpenTypelessTests/SentencePunctuationTests.swift)。固定雲端測試入口：`correction-probe --punctuation`，只使用公開測試句。
+**程式與驗證：** [SentencePunctuation](../Sources/EdgelessTypeCore/SentencePunctuation.swift)、[tests](../Tests/EdgelessTypeTests/SentencePunctuationTests.swift)。固定雲端測試入口：`correction-probe --punctuation`，只使用公開測試句。
 
 **限制：** 補標點需啟用上下文校正與有效 API。服務端額度／頻率限制、網路錯誤或非法結果仍會保留原轉寫；移除本機短期限不能解除這些錯誤。URLSession 使用極大的有限傳輸期間，應用程式本身不設校正等待期限。每次服務回覆仍有 token 上限；單一不可分割的極長程式碼／網址仍可能超限。驗證器能限制改寫，不能證明語意斷句一定正確。
 
@@ -152,7 +152,7 @@ API schema 參考：[OpenAI structured outputs](https://developers.openai.com/ap
 
 **解法：** 明確指定目前的模型 ID、推理層級，讓 UI 與請求一致。這項修改本身不會把價格降回舊費率。程式不因 API 名稱仍能呼叫，就將它視為可用性或價格未變的證據。
 
-**程式與驗證：** [CloudProvider](../Sources/OpenTypelessCore/CloudProvider.swift)、[provider tests](../Tests/OpenTypelessTests/CloudProviderTests.swift) 的 `testStructuredCorrectionAndPlainTranslationPayloads` 驗證校正指定 Grok 4.3／none、翻譯維持 Grok 4.7／high。本機 fixtures 不消耗 API 額度。
+**程式與驗證：** [CloudProvider](../Sources/EdgelessTypeCore/CloudProvider.swift)、[provider tests](../Tests/EdgelessTypeTests/CloudProviderTests.swift) 的 `testStructuredCorrectionAndPlainTranslationPayloads` 驗證校正指定 Grok 4.3／none、翻譯維持 Grok 4.7／high。本機 fixtures 不消耗 API 額度。
 
 **限制：** 價格與服務端映射會再改變；舊實測不能保證當前帳單。開發用的付費回歸呼叫應與正常使用量分開評估，不記錄或公開使用者帳單。
 
@@ -166,7 +166,7 @@ API schema 參考：[OpenAI structured outputs](https://developers.openai.com/ap
 
 **本專案解法：** 使用固定版本、校驗碼驗證的 Silero v5.1.2，在本機辨識前偵測人聲。常駐 worker 與 legacy CLI 皆啟用 VAD；缺少模型時回報錯誤，不偷偷跳過。worker 明確使用單一 processor context，讓 upstream 在無人聲時清除前次結果。原生 AVAudioEngine 在 Fn 觸發時直接開啟系統目前的輸入裝置；第一個音訊緩衝已寫入暫存 WAV 後播放開始音，不等提示音結束，也不裁切或靜音開頭。停止時先關閉麥克風再播結束音。權限與就緒回呼帶可取消 token，過期回呼不會重新開麥克風或播提示音。本版不啟用回音消除，開始音可能被收錄；此取捨優先避免等待提示音導致的漏字，並不保證任何環境都沒有幻覺。
 
-**程式與驗證：** [ResidentSpeechEngine](../Sources/OpenTypeless/ResidentSpeechEngine.swift)、[錄音生命週期](../Sources/OpenTypeless/main.swift)、[PendingRecordingStart](../Sources/OpenTypelessCore/Session.swift)、[取消回歸測試](../Tests/OpenTypelessTests/OpenTypelessTests.swift)。[本機合成音訊測試](../Scripts/test-speech-gate.py) 可在安裝模型後執行 `python3 Scripts/test-speech-gate.py --ui`；不使用麥克風或私人設定、不輸出轉寫、不呼叫雲端。先前版本 Small／Turbo 共 18 項通過，包括空白、底噪、風扇聲、敲擊聲、真正說「謝謝」「好」、混合語句、小聲語句，以及兩種輸入模式下的提示框、剪貼簿與零雲端請求檢查。Core 另驗證取消、過期與重複開始回呼。
+**程式與驗證：** [ResidentSpeechEngine](../Sources/EdgelessType/ResidentSpeechEngine.swift)、[錄音生命週期](../Sources/EdgelessType/main.swift)、[PendingRecordingStart](../Sources/EdgelessTypeCore/Session.swift)、[取消回歸測試](../Tests/EdgelessTypeTests/EdgelessTypeTests.swift)。[本機合成音訊測試](../Scripts/test-speech-gate.py) 可在安裝模型後執行 `python3 Scripts/test-speech-gate.py --ui`；不使用麥克風或私人設定、不輸出轉寫、不呼叫雲端。先前版本 Small／Turbo 共 18 項通過，包括空白、底噪、風扇聲、敲擊聲、真正說「謝謝」「好」、混合語句、小聲語句，以及兩種輸入模式下的提示框、剪貼簿與零雲端請求檢查。Core 另驗證取消、過期與重複開始回呼。
 
 新增原生錄音路徑測試會檢查 16／44.1／48 kHz 開頭與末尾取樣，再用同一串流轉換程式檢查語音與無人聲。`--speaker` 為另外明確啟用的實體麥克風／喇叭測試：請保持安靜，各提示音錄三秒，只回報成功與否，不輸出文字，錄音完成檢查即刪除；不使用此旗標不會開麥克風。需要已授權麥克風的本機簽署 App 時，以 `--app /path/to/edgelesstype.app` 指定。
 

@@ -47,7 +47,7 @@ for entry in index['problems']:
     for test in entry.get('test_names',[]):
         if not re.search(r'func\s+'+re.escape(test)+r'\(',test_text): errors.append(entry['id']+': missing test '+test)
 
-test_count = sum(len(re.findall(r'func test\w+\(\)',p.read_text())) for p in (root/'Tests/OpenTypelessTests').glob('*.swift'))
+test_count = sum(len(re.findall(r'func test\w+\(\)',p.read_text())) for p in (root/'Tests/EdgelessTypeTests').glob('*.swift'))
 claim = re.search(r'(\d+) 個 Core 測試',(root/'docs/COMPATIBILITY.md').read_text())
 if not claim or int(claim.group(1))!=test_count: errors.append('compatibility test count is out of date')
 
