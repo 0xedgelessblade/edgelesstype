@@ -923,8 +923,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
                 do {
                     updateUI(for: job) { self.panel.showWorking(.correcting) }
+                    timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
                     let polished = try polish(rough, config: config, cancellation: cancellation)
-                    if SpeechContent.hasWords(polished) { finalText = polished }
+                    if SpeechContent.hasWords(polished) {
+                        finalText = polished
+                        timing.correctionOutcome = polished == rough ? "unchanged" : "corrected"
+                    }
                 } catch {
                     guard !cancellation.isCancelled else { return }
                     timing.correctionOutcome = (error as? CloudError)?.rawValue ?? "request_failed"

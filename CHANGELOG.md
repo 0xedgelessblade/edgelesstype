@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-15 — Sentence-level speech correction guidance
+
+- Share contextual homophone and word-boundary guidance between full-text correction and the legacy polish route; align correction-enabled translation. Preserve ambiguity, negation and speaker intent without hardcoded substitutions or additional model calls.
+- Record successful legacy polishing as corrected/unchanged rather than not_requested, using status only.
+- Offline checks verify request construction and unchanged-text acceptance, not model accuracy or the cause of historical speech errors. No private recordings, context or transcripts are collected for tests.
+
 ## 2026-10-14 — Installation and documentation paths
 
 - Add safe first-install preparation of a separate private runtime, with allowlisted artifacts, model checksum checks, refusal to overwrite existing installations and synthetic failure tests.

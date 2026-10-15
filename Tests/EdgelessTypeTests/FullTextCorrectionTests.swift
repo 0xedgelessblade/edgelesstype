@@ -24,6 +24,23 @@ final class FullTextCorrectionTests: XCTestCase {
         XCTAssertFalse(body.system.contains("to 限"))
         XCTAssertFalse(body.timeoutSeconds.isFinite)
     }
+    func testSentenceRepairIsSharedWithoutLiteralReplacementRules() throws {
+        let correction = try ContextCorrection.draft(text: "合成資料", entries: [], model: "fixture")
+        let polish = ChatDraft.polish(text: "合成資料")
+        XCTAssertTrue(correction.system.contains(ContextCorrection.speechRepairGuidance))
+        XCTAssertTrue(polish.system.contains(ContextCorrection.speechRepairGuidance))
+        let translation = try ContextCorrection.translationDraft(text: "合成資料", entries: [], timeout: 25, reasoningEffort: "none")
+        XCTAssertTrue(translation.system.contains("word boundaries"))
+        XCTAssertTrue(translation.system.contains("Preserve negation"))
+        // No local substitution runs before the model; the complete utterance
+        // remains input data and a legitimate unchanged reply stays valid.
+        let original = "請從新的資料夾開啟檔案。"
+        let draft = try ContextCorrection.draft(text: original, entries: [], model: "fixture")
+        let payload = try JSONSerialization.jsonObject(with: Data(draft.user.utf8)) as! [String: Any]
+        XCTAssertEqual(payload["transcript"] as? String, original)
+        XCTAssertEqual(try ContextCorrection.correctFullText(original) { _ in original }, original)
+    }
+
     func testAllProvidersDeliverFullTextThroughNormalParsePath() throws {
         let reply = "这是新的完整句子，内容长度与原文不同。"
         for provider in CloudProvider.allCases {
