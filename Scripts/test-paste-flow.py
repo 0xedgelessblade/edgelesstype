@@ -9,6 +9,12 @@ source=(root/'Sources/EdgelessType/Paster.swift').read_text().replace('import Ap
 # No event is posted to macOS; no application or real clipboard is accessed.
 source=source.replace('edgelesstype-paste-diagnostic.json','edgelesstype-test-paste-diagnostic.json')
 source=source[:source.index('    private static func attribute(')]+'''
+    private static func requestChromeAccessibility(in pid: pid_t) {
+        Env.chromeRequests += 1
+        if Env.chromeRecoveryWorks {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) { Env.readable = true }
+        }
+    }
     private static func pasteTarget(in pid: pid_t) -> AXUIElement? { Env.readable ? Env.editor : nil }
     static func snapshot(_ element: AXUIElement) -> PasteSnapshot { PasteSnapshot(value: Env.readable ? element.value : nil, selection: nil) }
 }
@@ -34,7 +40,7 @@ struct SpeechContent { static func hasWords(_ text: String) -> Bool { !text.isEm
 func AXIsProcessTrusted() -> Bool { true }
 final class NSRunningApplication {
  enum Activation { case activateIgnoringOtherApps }
- var bundleIdentifier: String? { Env.codex ? "com.openai.codex" : (Env.grokBot ? "com.anysphere.sand" : "fixture") }
+ var bundleIdentifier: String? { Env.codex ? "com.openai.codex" : (Env.grokBot ? "com.anysphere.sand" : (Env.chrome ? "com.google.Chrome" : "fixture")) }
  let processIdentifier: pid_t
  init?(processIdentifier: pid_t) { self.processIdentifier = processIdentifier }
  func activate(options: [Activation]) {}
@@ -60,13 +66,16 @@ final class CGEvent {
 }
 enum Env {
  static var editor = AXUIElement()
+ static var chrome = false
+ static var chromeRequests = 0
+ static var chromeRecoveryWorks = false
  static var codex = false
  static var grokBot = false
  static var readable = true
  static var insert = true
  static var posts = 0
  static var restores = 0
- static func reset() { codex = false; grokBot = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
+ static func reset() { chrome = false; chromeRequests = 0; chromeRecoveryWorks = false; codex = false; grokBot = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
 }
 func tick(_ seconds: Double) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
 func check(_ value: @autoclosure () -> Bool, _ name: String) { precondition(value(), name); print("PASS \(name)") }
@@ -121,6 +130,25 @@ tests=r'''
   Env.reset()
   do { let p=Paster(); p.offer("Hello. 中文。",into:123,acceptModelText:true); tick(0.3)
    check(Env.editor.value=="Hello. 中文" && Env.posts==1,"paste removes final period without changing internal punctuation") }
+  Env.reset(); Env.chrome=true
+  do { let p=Paster(); p.offer("fixture",into:123); tick(0.35)
+   check(Env.chromeRequests==0 && Env.posts==1 && !p.isOffering,"Ready Chrome editor pastes without accessibility recovery") }
+  Env.reset(); Env.chrome=true; Env.readable=false; Env.chromeRecoveryWorks=true
+  do { let p=Paster(); p.offer("fixture",into:123); tick(2.6)
+   check(Env.chromeRequests==1 && Env.posts==1 && p.lastInsertionConfirmed && !p.isOffering,"Chrome delayed accessibility resolves before one verified paste") }
+  Env.reset(); Env.chrome=true; Env.readable=false
+  do { let p=Paster(); p.offer("fixture",into:123); tick(3.4)
+   check(Env.chromeRequests==1 && Env.posts==0 && p.isOffering,"Chrome inaccessible field never receives a blind paste"); p.cancelOffer() }
+  Env.reset(); Env.chrome=true; Env.readable=false; Env.chromeRecoveryWorks=true
+  do { let p=Paster(); p.offer("fixture",into:123); tick(0.1); p.cancelOffer(); tick(2.4)
+   check(Env.posts==0,"Cancelled Chrome recovery never pastes late") }
+  Env.reset(); Env.chrome=true; Env.readable=false; Env.chromeRecoveryWorks=true
+  do { let p=Paster(); p.offer("fixture",into:123); tick(0.1)
+   _=p.notePasteKey(controlOnly:false,fromUs:false); tick(2.5)
+   check(Env.posts==1 && !p.isOffering,"Manual paste during Chrome recovery prevents later duplicate paste") }
+  Env.reset(); Env.chrome=true; Env.readable=false
+  do { let p=Paster(); p.offer("fixture",into:456); tick(0.2)
+   check(Env.chromeRequests==0 && Env.posts==0,"Background Chrome is never prepared or pasted"); p.cancelOffer() }
   print("PASS all paste lifecycle scenarios (in-memory OS, not a live Codex test)")
  }
 }

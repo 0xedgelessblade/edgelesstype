@@ -38,3 +38,8 @@ Recording context is off by default. When enabled, the reader requests a bounded
 Context is kept in memory for one processing job; cancellation and completion reject late capture results. It is not saved as history, diagnostics, fixtures or backups. The old external command-line recognition path does not receive context in process arguments. If prompted terms appear in the transcript, later enabled cloud correction/translation can receive those terms.
 
 Recordings, context, transcripts, personal dictionary entries, credentials and signing keys must never be committed, attached to public issues, uploaded as CI artifacts or preserved for development tests. Use synthetic fixtures only. Temporary audio is removed by normal processing cleanup; this is not a forensic secure-erasure guarantee or a promise about abrupt crashes, operating-system storage, clipboard managers or a cloud provider's retention. No project diagnostics uploader is provided. Report only sanitized fixed outcomes, not content.
+
+
+## Chrome accessibility recovery
+
+If Chrome is the original foreground target but exposes no editable focus, the paste path can request its process-wide `AXEnhancedUserInterface` mode once, then retry field detection with a finite attempt budget. This exposes richer Chrome accessibility information to already-authorized accessibility clients, not just a single search field. It does not change TCC permissions, send content over the network or read page content as part of the activation request. It is not disabled afterwards because other assistive clients may rely on it. Actual insertion still requires a resolved editable target and the same foreground process; there is no generic blind Chrome paste.

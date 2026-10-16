@@ -209,3 +209,16 @@ Evidence: in-memory lifecycle tests cover single delivery, dismissal, unconfirme
 Recording retains the waveform. After recording stops, the panel switches to a spinner, explicit stage text, elapsed time and “錄音已停止”. Audio-upload progress is shown only when Foundation provides the expected body size; after the body is sent, the stage becomes recognition. Request-body send time and response waiting are measured separately when available; response waiting includes transport and server time, not a pure model execution measurement.
 
 Correction and translation reuse ephemeral sessions. When translation mode and context correction are both enabled, one translation request handles speech-draft correction plus translation with the same vocabulary/provider; dictation correction remains enabled as before. No provider or model is automatically changed, and no real audio is uploaded by tests. Synthetic request tests verify routing and progress, not live accuracy or a guaranteed latency improvement.
+
+
+## Chrome focus unavailable before automatic paste
+
+**症狀：** Google 搜尋或其他 Chrome 輸入框手動貼上正常，診斷卻顯示 `focused_target_unavailable`，且自動路徑沒有 `automatic_chord_sent`。
+
+**已確認範圍：** 這表示程式未辨認出可編輯焦點；不等於已證明 Chrome 內部延遲是唯一原因。[Chromium 的實作](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/chrome_browser_application_mac.mm) 可能在 `AXEnhancedUserInterface` 請求後延遲約兩秒啟用完整輔助使用資訊，原本約一秒的短重試不足以涵蓋這條路徑。
+
+**修正：** 只有原目標仍在前景、確定是 Google Chrome、且找不到輸入框時，才請求一次完整輔助使用資訊，再限次重新偵測。這是 Chrome 程序範圍的資訊暴露，並非僅單一欄位；不修改 macOS 權限或網頁文字。其他已獲輔助使用權限的程式也可能讀到更多 Chrome 資訊。不自動關閉此模式，以免干擾其他輔助工具。
+
+仍須辨認出真正的編輯欄位並核對焦點才送出一次 Cmd+V。不對 Chrome 啟用不需焦點的盲目貼上，不按 Enter，不掃描頁面或儲存內容。偵測失敗保留手動貼上；取消和手動補貼會使舊重試失效。
+
+**證據：** `Scripts/test-paste-flow.py` 模擬正常、延遲、無目標、取消、手動補貼與背景 Chrome。這是記憶體 OS 測試；使用者環境的實際成功仍需另外確認。

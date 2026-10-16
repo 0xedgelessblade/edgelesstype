@@ -593,6 +593,26 @@
       ],
       "evidence": "Synthetic preference/wire/range tests and isolated native setting controls.",
       "limits": "No private screen/audio tests; unsupported editors are skipped, accuracy gains are unmeasured."
+    },
+    {
+      "id": "chrome-delayed-accessibility",
+      "title_en": "Chrome automatic paste cannot resolve editable focus",
+      "title_zh": "Chrome 自動貼上找不到編輯焦點",
+      "queries": [
+        "Chrome Google search manual paste works",
+        "focused_target_unavailable AXEnhancedUserInterface",
+        "Chrome Google 搜尋 無法自動貼上"
+      ],
+      "article": "docs/TROUBLESHOOTING.md#chrome-focus-unavailable-before-automatic-paste",
+      "source_files": [
+        "Sources/EdgelessType/Paster.swift"
+      ],
+      "test_files": [
+        "Scripts/test-paste-flow.py"
+      ],
+      "test_names": [],
+      "evidence": "Content-free stage diagnosis and simulated delayed accessibility, cancellation, manual recovery and no-target behavior.",
+      "limits": "The activation affects the Chrome process, not only one field. Simulation does not prove native browser success or the exact internal cause."
     }
   ]
 }

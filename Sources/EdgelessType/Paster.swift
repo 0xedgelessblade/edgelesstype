@@ -14,6 +14,7 @@ final class Paster {
     private var verification: Timer?
     private var sending = false
     private var manualQueued = false
+    private var chromeRecoveryAttempted = false
     private var diagnosticEvents: [String] = []
 
     // Temporary local diagnosis: fixed stage names only, never text, clipboard
@@ -87,6 +88,17 @@ final class Paster {
             trace(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.anysphere.sand"
                 ? "grok_bot_opaque_foreground_fallback" : "codex_opaque_foreground_fallback")
             sendPasteChord(token: token, opaqueAutomatic: true)
+        } else if !sending, !chromeRecoveryAttempted,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                  NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.google.Chrome" {
+            chromeRecoveryAttempted = true
+            trace("chrome_accessibility_requested")
+            Self.requestChromeAccessibility(in: pid)
+            // Chromium can debounce accessibility activation for two seconds.
+            // Retry detection only; never retry a delivered paste chord.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.waitForTarget(pid, token: token, attempts: 60)
+            }
         } else if attempts > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.waitForTarget(pid, token: token, attempts: attempts - 1)
@@ -137,6 +149,7 @@ final class Paster {
         verification = nil
         isOffering = false
         manualQueued = false
+        chromeRecoveryAttempted = false
         pendingText = nil
         targetElement = nil
         before = nil
@@ -246,6 +259,18 @@ final class Paster {
     private static func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
         guard let value = attribute(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return (value as! AXUIElement)
+    }
+
+    private static func requestChromeAccessibility(in pid: pid_t) {
+        guard AXIsProcessTrusted(),
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+              NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.google.Chrome" else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.1)
+        // Requests process-wide accessibility exposure. No content read or TCC change.
+        // Do not disable it afterwards; other assistive clients may depend on it.
+        _ = attribute(app, kAXRoleAttribute)
+        _ = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
     }
 
     private static func rawFocus(in pid: pid_t, messagingTimeout: Float = 0.2) -> AXUIElement? {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-16 — Chrome editable-focus recovery
+
+- Request Chrome process-wide accessibility exposure once when the original foreground target lacks editable focus, then retry detection long enough to cover delayed activation.
+- Preserve editable-target verification, one-shot paste, cancellation and manual recovery; never fall back to blind browser-wide paste or submit a search.
+- Add simulated fast, delayed, unavailable, cancelled, manual and background-browser tests; native browser compatibility requires separate verification.
+
 ## 2026-10-15 — Sentence-level speech correction guidance
 
 - Share contextual homophone and word-boundary guidance between full-text correction and the legacy polish route; align correction-enabled translation. Preserve ambiguity, negation and speaker intent without hardcoded substitutions or additional model calls.
