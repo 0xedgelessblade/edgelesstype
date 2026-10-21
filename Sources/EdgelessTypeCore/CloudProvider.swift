@@ -57,7 +57,7 @@ public struct CloudPreferencesStore {
 }
 
 public enum CloudError: String, LocalizedError, Equatable {
-    case missingKey, invalidKey, invalidRequest, authentication, quota, unavailable, incomplete, invalidResponse, timeout, network
+    case missingKey, invalidKey, invalidRequest, authentication, quota, unavailable, incomplete, invalidResponse, timeout, network, offline
     public var errorDescription: String? {
         switch self {
         case .missingKey: return "這家服務商還沒有金鑰，請先儲存。"
@@ -70,6 +70,7 @@ public enum CloudError: String, LocalizedError, Equatable {
         case .invalidResponse: return "服務商的回覆格式不符合預期。"
         case .timeout: return "連線逾時，請稍後再試。"
         case .network: return "無法連線，請檢查網路。"
+        case .offline: return "目前離線，未送出校正。"
         }
     }
 }
@@ -169,19 +170,31 @@ public enum CloudWire {
 public final class CloudClient: NSObject, URLSessionTaskDelegate {
     public static let shared = CloudClient()
     private let session: URLSession
+    private let transport: PrivateHTTPDelegate
     public init(configuration: URLSessionConfiguration = .ephemeral) {
         let config = configuration.copy() as! URLSessionConfiguration
         config.httpCookieStorage = nil; config.urlCache = nil; config.urlCredentialStorage = nil
         config.timeoutIntervalForRequest = TimeInterval(Int32.max)
         config.timeoutIntervalForResource = TimeInterval(Int32.max)
-        session = URLSession(configuration: config, delegate: PrivateHTTPDelegate(), delegateQueue: nil)
+        let delegate = PrivateHTTPDelegate()
+        transport = delegate
+        session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         super.init()
     }
     deinit { session.invalidateAndCancel() }
+    /// Opens a TLS connection to the host root. No key, body, or retained response.
+    public func prewarm(_ url: URL) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.httpBody = nil
+        request.timeoutInterval = 5
+        session.dataTask(with: request) { _, _, _ in }.resume()
+    }
     public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     public func complete(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String,
-                         cancellation: ProcessingCancellation? = nil, onModel: ((String?) -> Void)? = nil) throws -> String {
+                         cancellation: ProcessingCancellation? = nil, onModel: ((String?) -> Void)? = nil,
+                         onTimings: ((TranscriptionTransferTimings?) -> Void)? = nil) throws -> String {
         try cancellation?.check()
         let request = try CloudWire.request(body, provider: provider, purpose: purpose, key: key)
         let semaphore = DispatchSemaphore(value: 0)
@@ -198,6 +211,8 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
             } else { box.value = .failure(CloudError.invalidResponse) }
             semaphore.signal()
         }
+        transport.track(task, progress: nil)
+        defer { onTimings?(transport.finish(task)) }
         let registration = cancellation?.register { task.cancel(); semaphore.signal() }
         defer { cancellation?.unregister(registration) }
         try cancellation?.check()
@@ -207,6 +222,7 @@ public final class CloudClient: NSObject, URLSessionTaskDelegate {
         } else {
             semaphore.wait()
         }
+        if cancellation?.didSkipCloud == true { throw ProcessingError.skippedCloud }
         try cancellation?.check()
         return try box.value.get()
     }

@@ -76,4 +76,21 @@ final class OutputPolicyTests: XCTestCase {
         }
         XCTAssertEqual(try OutputPolicy.forDelivery("It is 3.14. Done."), "It is 3.14. Done")
     }
+
+    func testCorrectionNoticeUsesShortLabelsAndHidesSuccess() {
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "offline")?.label, "離線")
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "network")?.label, "無法連線")
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "timeout")?.label, "逾時")
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "quota")?.label, "額度不足")
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "authentication")?.opensSettings, true)
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "missingKey")?.opensSettings, true)
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "invalidKey")?.opensSettings, true)
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "unavailable")?.label, "校正失敗")
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: "rejected:invalidJSON")?.label, "校正失敗")
+        for outcome in ["corrected", "unchanged", "not_requested", "skipped"] {
+            XCTAssertNil(OutputPolicy.correctionNotice(outcome: outcome))
+            XCTAssertNil(OutputPolicy.correctionWarning(outcome: outcome))
+        }
+        XCTAssertEqual(CloudError.offline.errorDescription, "目前離線，未送出校正。")
+    }
 }

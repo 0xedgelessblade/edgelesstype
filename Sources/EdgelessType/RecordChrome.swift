@@ -10,6 +10,9 @@ final class RecordChrome {
     var isVisible: Bool { panel.isVisible }
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
+    var onSkipCloud: (() -> Void)?
+    var onDegraded: ((String) -> Void)?
+    var onFailure: ((String, String) -> Void)?
 
     private let panel = RecordingPanel(
         contentRect: NSRect(x: 0, y: 0, width: 168, height: 44),
@@ -21,6 +24,7 @@ final class RecordChrome {
     private var waveTimer: Timer?
     private var phase = 0.0
     private var pendingWarning: String?
+    private var pendingOutcome = "not_requested"
 
     init() {
         panel.level = .floating
@@ -32,6 +36,7 @@ final class RecordChrome {
         panel.ignoresMouseEvents = true
         pill.onCancel = { [weak self] in self?.onCancel?() }
         pill.onConfirm = { [weak self] in self?.onConfirm?() }
+        pill.onSkipCloud = { [weak self] in self?.onSkipCloud?() }
         panel.contentView = NSView(frame: panel.contentRect(forFrameRect: panel.frame))
         panel.contentView?.addSubview(pill)
     }
@@ -48,6 +53,17 @@ final class RecordChrome {
 
     func showWorking(_ stage: ProcessingStage = .recognizing, progress: Double? = nil) {
         pendingWarning = nil
+        pendingOutcome = "not_requested"
+        let previous: ProcessingStage? = { if case .working(let current) = pill.mode { return current }; return nil }()
+        if stage == .correcting || stage == .translating {
+            if previous != stage {
+                pill.cloudStepStartedAt = Date()
+                pill.skipCloud.isHidden = true
+            }
+        } else {
+            pill.cloudStepStartedAt = nil
+            pill.skipCloud.isHidden = true
+        }
         if case .working = pill.mode {} else { pill.processingStartedAt = Date() }
         pill.mode = .working(stage)
         pill.workingProgress = progress
@@ -59,13 +75,14 @@ final class RecordChrome {
         panel.orderFrontRegardless()
     }
 
-    func showPending(_ text: String, warning: String? = nil) {
+    func showPending(_ text: String, warning: String? = nil, outcome: String = "not_requested") {
         guard let text = try? OutputPolicy.traditional(text) else {
             showWarning(OutputConversionError.unavailable.errorDescription ?? "繁體中文轉換失敗。", title: "文字未輸出")
             return
         }
         stopWave()
         pendingWarning = warning
+        pendingOutcome = outcome
         pill.pendingHint = warning == nil ? "文字已備妥；若未出現，請按 ⌘V 貼上。" : "AI 校正未完成；文字仍可貼上，詳情將保留顯示。"
         pill.mode = .pending(text)
         panel.ignoresMouseEvents = false
@@ -84,11 +101,19 @@ final class RecordChrome {
     }
 
     func dismissPending() {
-        if let warning = pendingWarning { showWarning(warning) }
-        else { hide() }
+        let outcome = pendingOutcome
+        pendingWarning = nil
+        pendingOutcome = "not_requested"
+        hide()
+        if OutputPolicy.correctionNotice(outcome: outcome) != nil { onDegraded?(outcome) }
     }
 
     func showWarning(_ text: String, title: String = "AI 校正未完成") {
+        if let onFailure {
+            hide()
+            onFailure(title, text)
+            return
+        }
         pendingWarning = nil
         stopWave()
         pill.mode = .warning(title, text)
@@ -119,6 +144,13 @@ final class RecordChrome {
             guard let self else { return }
             self.phase += 0.55
             self.pill.phase = self.phase
+            if case .working(let stage) = self.pill.mode,
+               let started = self.pill.cloudStepStartedAt,
+               ProcessingPlan.shouldOfferRoughPaste(stage: stage, elapsed: Date().timeIntervalSince(started)),
+               self.pill.skipCloud.isHidden {
+                self.pill.skipCloud.isHidden = false
+                self.place(width: 360, height: 64)
+            }
             self.pill.needsDisplay = true
         }
     }
@@ -146,6 +178,7 @@ final class PillView: NSView {
         }
     }
     private let cancelProcessing = NSButton()
+    let skipCloud = NSButton()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -158,20 +191,33 @@ final class PillView: NSView {
         cancelProcessing.action = #selector(cancelWork)
         cancelProcessing.isHidden = true
         addSubview(cancelProcessing)
+        skipCloud.isBordered = false
+        skipCloud.title = "先貼原文"
+        skipCloud.font = .systemFont(ofSize: 12, weight: .semibold)
+        skipCloud.contentTintColor = .white
+        skipCloud.target = self
+        skipCloud.action = #selector(skipWork)
+        skipCloud.setAccessibilityLabel("先貼原文")
+        skipCloud.isHidden = true
+        addSubview(skipCloud)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func layout() {
         super.layout()
+        skipCloud.frame = NSRect(x: bounds.width - 128, y: (bounds.height - 28) / 2, width: 76, height: 28)
         cancelProcessing.frame = NSRect(x: bounds.width - 44, y: (bounds.height - 32) / 2, width: 32, height: 32)
     }
 
     @objc private func cancelWork() { onCancel?() }
+    @objc private func skipWork() { onSkipCloud?() }
+    var onSkipCloud: (() -> Void)?
 
     var phase = 0.0
     var workingProgress: Double?
     var processingStartedAt = Date()
+    var cloudStepStartedAt: Date?
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
 
@@ -300,12 +346,19 @@ final class PillView: NSView {
         let title: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor.white]
         (stage.title as NSString).draw(at: NSPoint(x: 50, y: 31), withAttributes: title)
         let elapsed = max(0, Int(Date().timeIntervalSince(processingStartedAt)))
-        var detail = "錄音已停止 · \(elapsed) 秒"
-        if stage == .uploading, let progress = workingProgress {
-            detail += " · \(Int(min(1, max(0, progress)) * 100))%"
+        if stage == .correcting || stage == .translating {
+            let done: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.systemGreen]
+            ("辨識 ✓" as NSString).draw(at: NSPoint(x: 50, y: 12), withAttributes: done)
+            let caption: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(calibratedWhite: 0.72, alpha: 1)]
+            ("· \(elapsed) 秒" as NSString).draw(at: NSPoint(x: 98, y: 12), withAttributes: caption)
+        } else {
+            var detail = "錄音已停止 · \(elapsed) 秒"
+            if stage == .uploading, let progress = workingProgress {
+                detail += " · \(Int(min(1, max(0, progress)) * 100))%"
+            }
+            let caption: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(calibratedWhite: 0.72, alpha: 1)]
+            (detail as NSString).draw(at: NSPoint(x: 50, y: 12), withAttributes: caption)
         }
-        let caption: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(calibratedWhite: 0.72, alpha: 1)]
-        (detail as NSString).draw(at: NSPoint(x: 50, y: 12), withAttributes: caption)
     }
 
     private func drawX(in rect: NSRect) {

@@ -11,6 +11,16 @@ public struct TranscriptionTransferTimings: Codable, Equatable {
         self.uploadSeconds = uploadSeconds; self.responseWaitSeconds = responseWaitSeconds
         self.connectionSeconds = connectionSeconds; self.totalSeconds = totalSeconds
     }
+    public func merged(with later: TranscriptionTransferTimings) -> TranscriptionTransferTimings {
+        func add(_ lhs: Double?, _ rhs: Double?) -> Double? {
+            switch (lhs, rhs) { case (nil, nil): return nil; default: return (lhs ?? 0) + (rhs ?? 0) }
+        }
+        return TranscriptionTransferTimings(
+            uploadSeconds: add(uploadSeconds, later.uploadSeconds),
+            responseWaitSeconds: add(responseWaitSeconds, later.responseWaitSeconds),
+            connectionSeconds: connectionSeconds ?? later.connectionSeconds,
+            totalSeconds: totalSeconds + later.totalSeconds)
+    }
 }
 
 /// Kept separate from the owning client so URLSession does not retain its owner.

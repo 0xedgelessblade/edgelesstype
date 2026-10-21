@@ -16,4 +16,7 @@ public enum ProcessingPlan {
     public static func separateCorrection(mode: Session, enabled: Bool) -> Bool {
         enabled && mode == .dictation
     }
+    public static func shouldOfferRoughPaste(stage: ProcessingStage, elapsed: TimeInterval) -> Bool {
+        (stage == .correcting || stage == .translating) && elapsed >= 3
+    }
 }

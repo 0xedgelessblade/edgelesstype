@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-21 — Correction notices and transfer timing
+
+- Show a short top notice when corrected text could not be applied and the original was pasted. Real failures that paste nothing use a separate card. Neither covers the input.
+- After three seconds of correction or translation, offer to paste the original once without cancelling the rest of the job. Offline skips the cloud request before it is sent.
+- Record numeric correction connection, upload and response-wait timings. A keyless host warmup may run when correction is enabled; it sends no credential or text. Timeout remains unlimited.
+- OpenAI correction reasoning is unchanged. A live quality comparison still needs explicit permission.
+
 ## 2026-10-16 — Chrome editable-focus recovery
 
 - Request Chrome process-wide accessibility exposure once when the original foreground target lacks editable focus, then retry detection long enough to cover delayed activation.

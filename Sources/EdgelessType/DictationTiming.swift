@@ -11,6 +11,7 @@ struct DictationTiming: Codable {
     var correctionSeconds: Double = 0
     var translationSeconds: Double = 0
     var audioTransfer: TranscriptionTransferTimings?
+    var correctionTransfer: TranscriptionTransferTimings?
     var correctionOutcome = "not_requested"
     var correctionProvider: String?
     var timeToPasteReadySeconds: Double = 0
@@ -21,7 +22,7 @@ struct DictationTiming: Codable {
     var recordedAt = ""
 
     func saveCorrectionFailure() {
-        guard !["not_requested", "corrected", "unchanged"].contains(correctionOutcome) else { return }
+        guard !["not_requested", "corrected", "unchanged", "skipped"].contains(correctionOutcome) else { return }
         let status = ["outcome": correctionOutcome, "provider": correctionProvider ?? "unknown",
                       "recordedAt": ISO8601DateFormatter().string(from: Date())]
         let url = AppPaths.projectRoot().appendingPathComponent("Config/last-correction-failure.json")

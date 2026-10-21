@@ -172,9 +172,11 @@ mdls -name kMDItemCFBundleIdentifier -name kMDItemDisplayName "/path/to/YourDict
 
 這些改變有請求與邏輯測試，但沒有對所有真實帳戶的品質／延遲保證。合併提示詞可能改變模型表現，仍須用非私人固定案例評估。沒有以降低 timeout、截斷長文或先貼半成品來冒充加速。
 
+校正請求現在也記錄連線、上傳與回應等待，只記數字，不記內容、網址或 request ID。多段校正保留第一次連線時間，並把後面的等待加總。錄音開始且上下文校正開啟時，若網路可用且不是離線探測，對目前服務商的 host 根路徑發一個不帶金鑰、不帶內容的 HEAD，讓同一個 ephemeral session 有機會先建好連線；同一 host 60 秒內只發一次，回應丟棄。路徑顯示離線時不送校正，直接貼原文。真實雲端的推理強度比較仍須使用者允許，fixtures 不呼叫雲端。
+
 後續評估請使用相同模型、相近長度的非敏感語句，分開比較冷連線與重用連線，多次記錄中位數與尾端等待；一次快或慢不足以建立結論。真實雲端測試需要使用者明確允許傳送該測試內容，fixtures 本身不呼叫雲端。
 
-程式：[PrivateHTTPDelegate](../Sources/EdgelessTypeCore/PrivateHTTPDelegate.swift)、[Transcription](../Sources/EdgelessTypeCore/Transcription.swift)、[ProcessingPlan](../Sources/EdgelessTypeCore/ProcessingStage.swift)。測試：[ProcessingSpeedTests](../Tests/EdgelessTypeTests/ProcessingSpeedTests.swift)。
+程式：[PrivateHTTPDelegate](../Sources/EdgelessTypeCore/PrivateHTTPDelegate.swift)、[CloudProvider](../Sources/EdgelessTypeCore/CloudProvider.swift)、[CloudRecovery](../Sources/EdgelessTypeCore/CloudRecovery.swift)、[Transcription](../Sources/EdgelessTypeCore/Transcription.swift)、[ProcessingPlan](../Sources/EdgelessTypeCore/ProcessingStage.swift)。測試：[ProcessingSpeedTests](../Tests/EdgelessTypeTests/ProcessingSpeedTests.swift)。
 
 ## 7. 停止錄音後還像在錄音，是介面狀態錯誤
 
@@ -191,11 +193,11 @@ mdls -name kMDItemCFBundleIdentifier -name kMDItemDisplayName "/path/to/YourDict
 | 翻譯 | spinner、翻譯文字 | 中翻英請求 |
 | 可貼上 | 文字預覽與手動補救提示 | 有完整可用結果 |
 
-錄音器先停止並關閉檔案，再顯示「錄音已停止」。不使用假的進度條；總等待時間不因切換處理階段而歸零。狀態變更在主佇列執行，錄音提示框維持不搶焦點。
+錄音器先停止並關閉檔案，再顯示「錄音已停止」。不使用假的進度條；總等待時間不因切換處理階段而歸零。狀態變更在主佇列執行，錄音提示框維持不搶焦點。校正或翻譯超過 3 秒可先貼原文，只中止雲端步驟。結果提示改在螢幕上方，不蓋住輸入框；成功不顯示提示。
 
 介面渲染檢查可以只用固定文字，不必截取私人桌面或字典。渲染通過仍不代表已驗證真實麥克風／網路的時序。
 
-程式：[RecordChrome](../Sources/EdgelessType/RecordChrome.swift)、[main](../Sources/EdgelessType/main.swift)。句尾格式統一在 [OutputPolicy](../Sources/EdgelessTypeCore/OutputPolicy.swift) 的最終輸出處理：去除最末尾中英句點，保留中間標點；不靠修改模型提示詞來猜測是否遵守。
+程式：[RecordChrome](../Sources/EdgelessType/RecordChrome.swift)、[NoticePanel](../Sources/EdgelessType/NoticePanel.swift)、[main](../Sources/EdgelessType/main.swift)。句尾格式統一在 [OutputPolicy](../Sources/EdgelessTypeCore/OutputPolicy.swift) 的最終輸出處理：去除最末尾中英句點，保留中間標點；不靠修改模型提示詞來猜測是否遵守。
 
 ## 8. 如何把修正公開，又不公開私人環境
 

@@ -5,6 +5,7 @@ import AppKit
 import AVFoundation
 import Darwin
 import Foundation
+import Network
 import EdgelessTypeCore
 
 @_silgen_name("CGRequestListenEventAccess")
@@ -311,6 +312,7 @@ final class HotkeyMonitor {
 final class AppController: NSObject, NSApplicationDelegate {
     private let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let panel = RecordChrome()
+    private let notices = NoticePanel()
     private let paster = Paster()
     private lazy var soundPlayer = SoundPlayer(store: AppPaths.soundSettingsStore)
     private var recordingSoundPreset: SoundPreset?
@@ -340,9 +342,21 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     private var vocabularyEditor: VocabularyWindow?
     private var pendingTiming: DictationTiming?
+    private struct RetryContext {
+        var text: String
+        var settings: VocabularySettings
+        var config: AppConfig
+    }
+    private var retryContext: RetryContext?
+    private var correctionDegraded = false
+    private let pathMonitor = NWPathMonitor()
+    private let pathLock = NSLock()
+    private var pathSatisfiedValue = true
+    private var warmedAt: [String: Date] = [:]
+    private var pathSatisfied: Bool { pathLock.lock(); defer { pathLock.unlock() }; return pathSatisfiedValue }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        status.button?.title = AppIdentity.displayName
+        setStatus(AppIdentity.displayName)
         installApplicationMenu()
         requestAccessibility()
         panel.onCancel = { [weak self] in
@@ -355,6 +369,27 @@ final class AppController: NSObject, NSApplicationDelegate {
             self.cancel()
         }
         panel.onConfirm = { [weak self] in self?.finish() }
+        panel.onSkipCloud = { [weak self] in self?.currentProcessing?.cancellation.skipCloud() }
+        panel.onDegraded = { [weak self] outcome in
+            guard let self, let notice = OutputPolicy.correctionNotice(outcome: outcome) else { return }
+            self.correctionDegraded = true
+            self.setStatus(AppIdentity.displayName)
+            self.notices.showDegraded(notice)
+        }
+        panel.onFailure = { [weak self] title, detail in
+            self?.notices.showFailure(title: title, detail: detail)
+        }
+        notices.onRetry = { [weak self] in self?.retryLastCorrection() }
+        notices.onCopy = { [weak self] in self?.copyRetryText() }
+        notices.onOpenSettings = { [weak self] in self?.showAPISettings() }
+        notices.onDismissed = { [weak self] in self?.retryContext = nil }
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            self.pathLock.lock()
+            self.pathSatisfiedValue = path.status == .satisfied
+            self.pathLock.unlock()
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "edgelesstype.network"))
         paster.onDismiss = { [weak self] in self?.panel.dismissPending(); self?.finishTiming() }
         rebuildMenu()
         explainIfNeeded {
@@ -556,7 +591,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 try ResidentSpeechEngine.shared.warmUp(config: config)
                 DispatchQueue.main.async {
                     guard self.transcriptionBackend == .localWhisper else { return }
-                    if !self.busy && self.session == .idle { self.status.button?.title = AppIdentity.displayName }
+                    if !self.busy && self.session == .idle { self.setStatus(AppIdentity.displayName) }
                     self.vocabularyEditor?.setModelStatus("\(resident.displayName) · Metal GPU · 已常駐")
                 }
             } catch {
@@ -639,7 +674,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             retry?.invalidate()
             retry = nil
             NSApp.setActivationPolicy(.regular)
-            status.button?.title = AppIdentity.displayName
+            setStatus(AppIdentity.displayName)
             panel.showMessage("Fn 已啟用")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { self.panel.hide() }
         } else {
@@ -685,13 +720,15 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func begin(_ mode: Session) {
         guard let config else { return }
         do { recordingTranscription = try AppPaths.transcriptionStore.load() }
-        catch { panel.showWarning("語音辨識設定無法讀取，請重新選擇並儲存。", title: "無法開始錄音"); return }
+        catch { notices.showFailure(title: "無法開始錄音", detail: "語音辨識設定無法讀取，請重新選擇並儲存。"); return }
         pendingTiming = nil
         paster.cancelOffer()
+        notices.hide()
         // Read for each recording; user edits need no app restart. A broken
         // vocabulary file must not turn on cloud processing or be overwritten.
         recordingVocabulary = (try? AppPaths.vocabularyStore.load(fallbackTerms: config.terms))
             ?? VocabularySettings(entries: config.terms.map { VocabularyEntry(word: $0) })
+        prewarmCorrectionConnection()
         // Capture the destination at the Fn gesture, before any asynchronous cue.
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         contextCapture?.discard()
@@ -758,7 +795,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         startedAt = nil
         cleanup(url)
         busy = false
-        status.button?.title = AppIdentity.displayName
+        setStatus(AppIdentity.displayName)
         panel.hide()
     }
 
@@ -783,7 +820,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             contextCapture?.discard(); contextCapture = nil
             cleanup(url)
             busy = false
-            status.button?.title = AppIdentity.displayName
+            setStatus(AppIdentity.displayName)
             panel.hide()
             return
         }
@@ -866,7 +903,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             updateUI(for: job) {
                 self.busy = false
                 self.currentProcessing = nil
-                self.status.button?.title = AppIdentity.displayName
+                self.setStatus(AppIdentity.displayName)
             }
         }
         guard !cancellation.isCancelled else { return }
@@ -880,7 +917,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             guard !cancellation.isCancelled else { return }
             let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
                 ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
-            updateUI(for: job) { self.panel.showWarning(reason, title: "語音辨識未完成") }
+            updateUI(for: job) { self.notices.showFailure(title: "語音辨識未完成", detail: reason) }
             return
         }
         guard !cancellation.isCancelled else { return }
@@ -894,15 +931,23 @@ final class AppController: NSObject, NSApplicationDelegate {
         if ProcessingPlan.separateCorrection(mode: mode, enabled: recordingVocabulary.contextCorrectionEnabled) && !transcript.isEmpty {
             updateUI(for: job) { self.status.button?.title = "校正"; self.panel.showWorking(.correcting) }
             timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
-            do {
-                corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config, cancellation: cancellation)
-                timing.correctionOutcome = corrected == transcript ? "unchanged" : "corrected"
-            } catch {
-                guard !cancellation.isCancelled else { return }
-                if let failure = error as? CloudError { timing.correctionOutcome = failure.rawValue }
-                else { timing.correctionOutcome = "request_failed" }
-                timing.saveCorrectionFailure()
-                corrected = transcript
+            if !pathSatisfied {
+                let decision = CloudRecovery.offline(transcript: transcript)
+                timing.correctionOutcome = decision.outcome
+                corrected = decision.text
+            } else {
+                do {
+                    var transfer: TranscriptionTransferTimings?
+                    corrected = try ContextCorrectionService.correct(transcript, settings: recordingVocabulary, config: config, cancellation: cancellation) { transfer = $0 }
+                    timing.correctionTransfer = transfer
+                    timing.correctionOutcome = corrected == transcript ? "unchanged" : "corrected"
+                } catch {
+                    let decision = CloudRecovery.correctionFallback(skipped: cancellation.didSkipCloud, cancelled: cancellation.isCancelled, failure: error as? CloudError, transcript: transcript)
+                    guard decision.pasteOnce else { return }
+                    timing.correctionOutcome = decision.outcome
+                    if decision.outcome != "skipped" { timing.saveCorrectionFailure() }
+                    corrected = decision.text
+                }
             }
         } else {
             corrected = transcript
@@ -921,63 +966,132 @@ final class AppController: NSObject, NSApplicationDelegate {
             if !recordingVocabulary.contextCorrectionEnabled,
                Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
                OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
-                do {
-                    updateUI(for: job) { self.panel.showWorking(.correcting) }
-                    timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
-                    let polished = try polish(rough, config: config, cancellation: cancellation)
-                    if SpeechContent.hasWords(polished) {
-                        finalText = polished
-                        timing.correctionOutcome = polished == rough ? "unchanged" : "corrected"
+                if !pathSatisfied {
+                    timing.correctionOutcome = CloudRecovery.offline(transcript: rough).outcome
+                } else {
+                    do {
+                        updateUI(for: job) { self.panel.showWorking(.correcting) }
+                        timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
+                        var transfer: TranscriptionTransferTimings?
+                        let polished = try polish(rough, config: config, cancellation: cancellation, onTimings: { transfer = $0 })
+                        timing.correctionTransfer = transfer
+                        if SpeechContent.hasWords(polished) {
+                            finalText = polished
+                            timing.correctionOutcome = polished == rough ? "unchanged" : "corrected"
+                        }
+                    } catch {
+                        let decision = CloudRecovery.correctionFallback(skipped: cancellation.didSkipCloud, cancelled: cancellation.isCancelled, failure: error as? CloudError, transcript: rough)
+                        guard decision.pasteOnce else { return }
+                        timing.correctionOutcome = decision.outcome
+                        if decision.outcome != "skipped" { timing.saveCorrectionFailure() }
+                        finalText = decision.text
                     }
-                } catch {
-                    guard !cancellation.isCancelled else { return }
-                    timing.correctionOutcome = (error as? CloudError)?.rawValue ?? "request_failed"
-                    timing.saveCorrectionFailure()
                 }
             }
-            guard let text = try? OutputPolicy.forDelivery(finalText) else {
-                updateUI(for: job) { self.panel.showWarning("繁體中文轉換失敗，本次沒有輸出文字。", title: "文字未輸出") }
-                return
-            }
-            guard !text.isEmpty else {
-                updateUI(for: job) { self.panel.hide() }
-                return
-            }
-            timing.timeToPasteReadySeconds = timing.elapsed()
-            let readyTiming = timing
-            updateUI(for: job) {
-                self.pendingTiming = readyTiming
-                self.panel.showPending(text, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
-                self.paster.offer(text, into: job.targetPID, acceptModelText: ["corrected", "unchanged"].contains(readyTiming.correctionOutcome))
-            }
+            offerOnce(finalText, outcome: timing.correctionOutcome, job: job, timing: timing)
         case .waitForEnglish(let chinese):
             updateUI(for: job) { self.status.button?.title = "翻譯"; self.panel.showWorking(.translating) }
+            if !pathSatisfied {
+                updateUI(for: job) { self.notices.showFailure(title: "翻譯未完成", detail: "目前離線，未送出翻譯。") }
+                return
+            }
             let translationStarted = DispatchTime.now().uptimeNanoseconds
             do {
-                let english = try OutputPolicy.forDelivery(translate(chinese, config: config, vocabulary: recordingVocabulary, cancellation: cancellation))
+                let english = try translate(chinese, config: config, vocabulary: recordingVocabulary, cancellation: cancellation)
                 timing.translationSeconds = Double(DispatchTime.now().uptimeNanoseconds - translationStarted) / 1e9
                 guard SpeechContent.hasWords(english) else {
                     updateUI(for: job) { self.panel.hide() }
                     return
                 }
-                timing.timeToPasteReadySeconds = timing.elapsed()
-                let readyTiming = timing
-                updateUI(for: job) {
-                    self.pendingTiming = readyTiming
-                    self.panel.showPending(english, warning: OutputPolicy.correctionWarning(outcome: readyTiming.correctionOutcome))
-                    self.paster.offer(english, into: job.targetPID)
-                }
+                offerOnce(english, outcome: timing.correctionOutcome, job: job, timing: timing)
             } catch {
+                let decision = CloudRecovery.translationFallback(skipped: cancellation.didSkipCloud, cancelled: cancellation.isCancelled, chinese: chinese)
+                if decision.pasteOnce {
+                    timing.correctionOutcome = decision.outcome
+                    offerOnce(decision.text, outcome: decision.outcome, job: job, timing: timing)
+                    return
+                }
                 guard !cancellation.isCancelled else { return }
                 let reason = (error as? CloudError)?.errorDescription ?? "翻譯失敗，請稍後再試。"
-                updateUI(for: job) { self.panel.showWarning(reason + "\n本次沒有輸出翻譯文字。", title: "翻譯未完成") }
+                updateUI(for: job) { self.notices.showFailure(title: "翻譯未完成", detail: reason) }
             }
         }
     }
 
-    private func polish(_ text: String, config: AppConfig, cancellation: ProcessingCancellation) throws -> String {
+    private func offerOnce(_ text: String, outcome: String, job: ProcessingJob, timing: DictationTiming) {
+        guard let delivered = try? OutputPolicy.forDelivery(text), !delivered.isEmpty else {
+            updateUI(for: job) { self.notices.showFailure(title: "文字未輸出", detail: "繁體中文轉換失敗，本次沒有輸出文字。") }
+            return
+        }
+        var ready = timing
+        ready.timeToPasteReadySeconds = ready.elapsed()
+        updateUI(for: job) {
+            if ["corrected", "unchanged"].contains(outcome) {
+                self.correctionDegraded = false
+                self.setStatus(AppIdentity.displayName)
+            }
+            if OutputPolicy.correctionNotice(outcome: outcome) != nil {
+                self.retryContext = RetryContext(text: delivered, settings: job.vocabulary, config: job.config)
+            }
+            self.pendingTiming = ready
+            self.panel.showPending(delivered, warning: OutputPolicy.correctionWarning(outcome: outcome), outcome: outcome)
+            self.paster.offer(delivered, into: job.targetPID, acceptModelText: ["corrected", "unchanged"].contains(outcome))
+        }
+    }
+
+    private func setStatus(_ title: String) {
+        guard correctionDegraded else { status.button?.title = title; return }
+        let text = NSMutableAttributedString(string: title + " ", attributes: [.foregroundColor: NSColor.labelColor])
+        text.append(NSAttributedString(string: "●", attributes: [.foregroundColor: NSColor.systemOrange]))
+        status.button?.attributedTitle = text
+    }
+
+    private func prewarmCorrectionConnection() {
+        guard recordingVocabulary.contextCorrectionEnabled,
+              let provider = try? CloudAccess.preferences.load().provider,
+              let url = ConnectionWarmup.hostURL(from: provider.endpoint),
+              let host = url.host else { return }
+        let now = Date()
+        guard ConnectionWarmup.shouldSend(offlineProbe: CloudAccess.offlineProbe, pathSatisfied: pathSatisfied, host: host, now: now, lastSent: warmedAt[host]) else { return }
+        warmedAt[host] = now
+        CloudClient.shared.prewarm(url)
+    }
+
+    private func copyRetryText() {
+        guard let text = retryContext?.text else { return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(text, forType: .string)
+    }
+
+    private func retryLastCorrection() {
+        guard let context = retryContext else { return }
+        notices.hide()
+        retryContext = context
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let corrected = try ContextCorrectionService.correct(context.text, settings: context.settings, config: context.config)
+                let delivered = try OutputPolicy.forDelivery(corrected)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let board = NSPasteboard.general
+                    board.clearContents()
+                    board.setString(delivered, forType: .string)
+                    self.retryContext = nil
+                    self.correctionDegraded = false
+                    self.setStatus(AppIdentity.displayName)
+                    self.notices.showCopied()
+                }
+            } catch {
+                let reason = (error as? CloudError)?.errorDescription ?? "校正請求失敗，請稍後再試。"
+                DispatchQueue.main.async { self?.notices.showFailure(title: "重試未完成", detail: reason) }
+            }
+        }
+    }
+
+    private func polish(_ text: String, config: AppConfig, cancellation: ProcessingCancellation, onTimings: ((TranscriptionTransferTimings?) -> Void)? = nil) throws -> String {
         let body = ChatDraft.polish(text: text, timeout: .infinity)
-        return try CloudAccess.complete(body, purpose: .correction, cancellation: cancellation)
+        return try CloudAccess.complete(body, purpose: .correction, cancellation: cancellation, onTimings: onTimings)
     }
 
     private func translate(_ text: String, config: AppConfig, vocabulary: VocabularySettings, cancellation: ProcessingCancellation) throws -> String {
