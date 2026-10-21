@@ -222,3 +222,13 @@ Correction and translation reuse ephemeral sessions. When translation mode and c
 仍須辨認出真正的編輯欄位並核對焦點才送出一次 Cmd+V。不對 Chrome 啟用不需焦點的盲目貼上，不按 Enter，不掃描頁面或儲存內容。偵測失敗保留手動貼上；取消和手動補貼會使舊重試失效。
 
 **證據：** `Scripts/test-paste-flow.py` 模擬正常、延遲、無目標、取消、手動補貼與背景 Chrome。這是記憶體 OS 測試；使用者環境的實際成功仍需另外確認。
+
+## Electron focus unavailable before automatic paste
+
+**症狀：** Claude 桌面版等 Electron App 的輸入框，手動 ⌘V 正常，自動貼入沒有出現；診斷顯示 `focused_target_unavailable`，沒有 `automatic_chord_sent`。
+
+**判斷：** Electron 與 Chrome 同樣以 Chromium 為基礎，預設不向一般輔助工具公開完整的 AX 樹，因此找不到可編輯焦點。先前的恢復只比對 Google Chrome 的 bundle ID。
+
+**修正：** 原目標仍在前景、App bundle 內含 `Contents/Frameworks/Electron Framework.framework`，且找不到輸入框時，請求一次 `AXManualAccessibility` 與 `AXEnhancedUserInterface`，再限次重新偵測。不以猜測的 bundle ID 判斷；不對 Electron 啟用盲目貼上；仍須辨認真正的編輯欄位並核對焦點才送出一次 Cmd+V。偵測失敗保留手動貼上。
+
+**證據：** `Scripts/test-paste-flow.py` 新增 Electron 延遲恢復、無法讀取、已就緒與背景程序四種記憶體 OS 情境。實際 Electron App（例如 Claude 桌面版）的自動貼入仍須在使用者環境確認。

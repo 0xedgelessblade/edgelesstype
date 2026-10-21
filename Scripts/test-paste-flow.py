@@ -9,8 +9,11 @@ source=(root/'Sources/EdgelessType/Paster.swift').read_text().replace('import Ap
 # No event is posted to macOS; no application or real clipboard is accessed.
 source=source.replace('edgelesstype-paste-diagnostic.json','edgelesstype-test-paste-diagnostic.json')
 source=source[:source.index('    private static func attribute(')]+'''
-    private static func requestChromeAccessibility(in pid: pid_t) {
-        Env.chromeRequests += 1
+    private static func accessibilityRecoveryKind(for pid: pid_t) -> AccessibilityRecoveryKind? {
+        Env.chrome ? .chrome : (Env.electron ? .electron : nil)
+    }
+    private static func requestAccessibilityExposure(in pid: pid_t, kind: AccessibilityRecoveryKind) {
+        if kind == .electron { Env.electronRequests += 1 } else { Env.chromeRequests += 1 }
         if Env.chromeRecoveryWorks {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) { Env.readable = true }
         }
@@ -35,7 +38,8 @@ final class ClipboardLease {
  func discard() {}
 }
 enum CorrectionRejection: String { case fixture; var explanation: String { "fixture" } }
-enum CloudError: String { case fixture; var errorDescription: String? { "fixture" } }
+// Mirror every case OutputPolicy names directly; keep in sync with CloudProvider.swift.
+enum CloudError: String { case fixture, offline, network, timeout, quota; var errorDescription: String? { "fixture" } }
 struct SpeechContent { static func hasWords(_ text: String) -> Bool { !text.isEmpty } }
 func AXIsProcessTrusted() -> Bool { true }
 final class NSRunningApplication {
@@ -69,13 +73,15 @@ enum Env {
  static var chrome = false
  static var chromeRequests = 0
  static var chromeRecoveryWorks = false
+ static var electron = false
+ static var electronRequests = 0
  static var codex = false
  static var grokBot = false
  static var readable = true
  static var insert = true
  static var posts = 0
  static var restores = 0
- static func reset() { chrome = false; chromeRequests = 0; chromeRecoveryWorks = false; codex = false; grokBot = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
+ static func reset() { chrome = false; chromeRequests = 0; electron = false; electronRequests = 0; chromeRecoveryWorks = false; codex = false; grokBot = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
 }
 func tick(_ seconds: Double) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
 func check(_ value: @autoclosure () -> Bool, _ name: String) { precondition(value(), name); print("PASS \(name)") }
@@ -149,6 +155,18 @@ tests=r'''
   Env.reset(); Env.chrome=true; Env.readable=false
   do { let p=Paster(); p.offer("fixture",into:456); tick(0.2)
    check(Env.chromeRequests==0 && Env.posts==0,"Background Chrome is never prepared or pasted"); p.cancelOffer() }
+  Env.reset(); Env.electron=true; Env.readable=false; Env.chromeRecoveryWorks=true
+  do { let p=Paster(); p.offer("fixture",into:123); tick(2.6)
+   check(Env.electronRequests==1 && Env.chromeRequests==0 && Env.posts==1 && p.lastInsertionConfirmed && !p.isOffering,"Electron delayed accessibility resolves before one verified paste") }
+  Env.reset(); Env.electron=true; Env.readable=false
+  do { let p=Paster(); p.offer("fixture",into:123); tick(3.4)
+   check(Env.electronRequests==1 && Env.posts==0 && p.isOffering,"Electron inaccessible field never receives a blind paste"); p.cancelOffer() }
+  Env.reset(); Env.electron=true
+  do { let p=Paster(); p.offer("fixture",into:123); tick(0.35)
+   check(Env.electronRequests==0 && Env.posts==1 && !p.isOffering,"Ready Electron editor pastes without accessibility recovery") }
+  Env.reset(); Env.electron=true; Env.readable=false; Env.chromeRecoveryWorks=true
+  do { let p=Paster(); p.offer("fixture",into:456); tick(0.2)
+   check(Env.electronRequests==0 && Env.posts==0,"Background Electron app is never prepared or pasted"); p.cancelOffer() }
   print("PASS all paste lifecycle scenarios (in-memory OS, not a live Codex test)")
  }
 }

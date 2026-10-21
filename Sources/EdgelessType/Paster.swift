@@ -1,6 +1,8 @@
 import AppKit
 import EdgelessTypeCore
 
+enum AccessibilityRecoveryKind { case chrome, electron }
+
 final class Paster {
     var onDismiss: (() -> Void)?
     private(set) var isOffering = false
@@ -14,7 +16,7 @@ final class Paster {
     private var verification: Timer?
     private var sending = false
     private var manualQueued = false
-    private var chromeRecoveryAttempted = false
+    private var accessibilityRecoveryAttempted = false
     private var diagnosticEvents: [String] = []
 
     // Temporary local diagnosis: fixed stage names only, never text, clipboard
@@ -88,13 +90,14 @@ final class Paster {
             trace(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.anysphere.sand"
                 ? "grok_bot_opaque_foreground_fallback" : "codex_opaque_foreground_fallback")
             sendPasteChord(token: token, opaqueAutomatic: true)
-        } else if !sending, !chromeRecoveryAttempted,
+        } else if !sending, !accessibilityRecoveryAttempted,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-                  NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.google.Chrome" {
-            chromeRecoveryAttempted = true
-            trace("chrome_accessibility_requested")
-            Self.requestChromeAccessibility(in: pid)
-            // Chromium can debounce accessibility activation for two seconds.
+                  let kind = Self.accessibilityRecoveryKind(for: pid) {
+            accessibilityRecoveryAttempted = true
+            trace(kind == .chrome ? "chrome_accessibility_requested" : "electron_accessibility_requested")
+            Self.requestAccessibilityExposure(in: pid, kind: kind)
+            // Chromium (Chrome and Electron apps such as the Claude desktop app)
+            // can debounce accessibility activation for about two seconds.
             // Retry detection only; never retry a delivered paste chord.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.waitForTarget(pid, token: token, attempts: 60)
@@ -149,7 +152,7 @@ final class Paster {
         verification = nil
         isOffering = false
         manualQueued = false
-        chromeRecoveryAttempted = false
+        accessibilityRecoveryAttempted = false
         pendingText = nil
         targetElement = nil
         before = nil
@@ -261,15 +264,34 @@ final class Paster {
         return (value as! AXUIElement)
     }
 
-    private static func requestChromeAccessibility(in pid: pid_t) {
+    /// Chromium-based targets hide their AX tree until an assistive client
+    /// asks for it. Chrome is matched by bundle ID; Electron apps are matched
+    /// by the framework inside their bundle, never by a guessed bundle ID.
+    private static func accessibilityRecoveryKind(for pid: pid_t) -> AccessibilityRecoveryKind? {
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return nil }
+        if app.bundleIdentifier == "com.google.Chrome" { return .chrome }
+        return isElectronApp(pid) ? .electron : nil
+    }
+
+    private static func isElectronApp(_ pid: pid_t) -> Bool {
+        guard let bundle = NSRunningApplication(processIdentifier: pid)?.bundleURL else { return false }
+        let framework = bundle.appendingPathComponent("Contents/Frameworks/Electron Framework.framework")
+        return FileManager.default.fileExists(atPath: framework.path)
+    }
+
+    private static func requestAccessibilityExposure(in pid: pid_t, kind: AccessibilityRecoveryKind) {
         guard AXIsProcessTrusted(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-              NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.google.Chrome" else { return }
+              accessibilityRecoveryKind(for: pid) == kind else { return }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.1)
         // Requests process-wide accessibility exposure. No content read or TCC change.
         // Do not disable it afterwards; other assistive clients may depend on it.
         _ = attribute(app, kAXRoleAttribute)
+        if kind == .electron {
+            // Electron's documented switch for assistive clients other than VoiceOver.
+            _ = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        }
         _ = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
     }
 
