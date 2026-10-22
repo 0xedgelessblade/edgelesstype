@@ -8,6 +8,11 @@ private final class RecordingPanel: NSPanel {
 
 final class RecordChrome {
     var isVisible: Bool { panel.isVisible }
+    /// True while the rough-paste button is shown; a lone Fn tap does the same.
+    var offersSkipCloud: Bool {
+        guard panel.isVisible, case .working = pill.mode else { return false }
+        return !pill.skipCloud.isHidden
+    }
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
     var onSkipCloud: (() -> Void)?
@@ -192,12 +197,13 @@ final class PillView: NSView {
         cancelProcessing.isHidden = true
         addSubview(cancelProcessing)
         skipCloud.isBordered = false
-        skipCloud.title = "先貼原文"
+        skipCloud.title = "先貼原文 · Fn"
         skipCloud.font = .systemFont(ofSize: 12, weight: .semibold)
         skipCloud.contentTintColor = .white
+        skipCloud.toolTip = "或再按一次 Fn"
         skipCloud.target = self
         skipCloud.action = #selector(skipWork)
-        skipCloud.setAccessibilityLabel("先貼原文")
+        skipCloud.setAccessibilityLabel("先貼原文，或再按一次 Fn")
         skipCloud.isHidden = true
         addSubview(skipCloud)
     }
@@ -206,7 +212,7 @@ final class PillView: NSView {
 
     override func layout() {
         super.layout()
-        skipCloud.frame = NSRect(x: bounds.width - 128, y: (bounds.height - 28) / 2, width: 76, height: 28)
+        skipCloud.frame = NSRect(x: bounds.width - 148, y: (bounds.height - 28) / 2, width: 96, height: 28)
         cancelProcessing.frame = NSRect(x: bounds.width - 44, y: (bounds.height - 32) / 2, width: 32, height: 32)
     }
 

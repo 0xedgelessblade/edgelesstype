@@ -436,6 +436,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "短按 Fn：聽寫開始／結束", action: nil, keyEquivalent: "")
         menu.addItem(withTitle: "短按 Fn+Shift 開始翻譯，單按 Fn 結束", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "校正等太久：再按 Fn 先貼原文", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         let explain = menu.addItem(withTitle: "查看權限說明", action: #selector(showExplain), keyEquivalent: "")
         explain.target = self
@@ -703,7 +704,11 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func handle(_ kind: TapKind) {
         // Keep the visible cancel control available while processing.
-        if busy { return }
+        // Once the rough-paste button shows, a lone Fn tap presses it too.
+        if busy {
+            if kind == .fn, panel.offersSkipCloud { currentProcessing?.cancellation.skipCloud() }
+            return
+        }
         let action = Hotkey.decide(session: session, tap: kind)
         switch action {
         case .startDictation:
