@@ -3,16 +3,17 @@ import EdgelessTypeCore
 
 final class TranscriptionSettingsWindow: NSWindowController {
     var onSave: ((TranscriptionPreferences) throws -> Void)?
-    var onOpenAIKey: (() -> Void)?
+    var onKey: ((CloudProvider) -> Void)?
     private let store: TranscriptionPreferencesStore
     private let backend = NSPopUpButton(frame: .zero, pullsDown: false)
     private let detail = NSTextField(wrappingLabelWithString: "")
-    private let consent = NSButton(checkboxWithTitle: "我同意將之後的錄音傳送至 OpenAI 進行轉寫。", target: nil, action: nil)
+    private let consent = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let saveButton = NSButton(title: "儲存選擇", target: nil, action: nil)
-    private let keyButton = NSButton(title: "OpenAI 金鑰設定…", target: nil, action: nil)
+    private let keyButton = NSButton(title: "金鑰設定…", target: nil, action: nil)
     private let contextSwitch = NSSwitch()
     private let cloudContextSwitch = NSSwitch()
     private let cloudContextRow = NSView()
+    private let cloudTitle = NSTextField(labelWithString: "")
     private let contextDetail = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
 
@@ -25,7 +26,7 @@ final class TranscriptionSettingsWindow: NSWindowController {
         build(); refresh(); window.center()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    private var selected: TranscriptionBackend { backend.indexOfSelectedItem == 1 ? .openAI : .localWhisper }
+    private var selected: TranscriptionBackend { TranscriptionBackend.allCases[max(0, min(backend.indexOfSelectedItem, TranscriptionBackend.allCases.count - 1))] }
     private func build() {
         guard let view = window?.contentView else { return }
         let title = NSTextField(labelWithString: "語音辨識方式")
@@ -62,12 +63,10 @@ final class TranscriptionSettingsWindow: NSWindowController {
         caption.font = .systemFont(ofSize: 12); caption.textColor = .secondaryLabelColor
         caption.frame = NSRect(x: 20, y: 135, width: 516, height: 26)
         cloudContextRow.frame = NSRect(x: 20, y: 82, width: 524, height: 44)
-        let cloudTitle = NSTextField(labelWithString: "允許傳送至 OpenAI")
         cloudTitle.font = .systemFont(ofSize: 13, weight: .medium)
         cloudTitle.frame = NSRect(x: 0, y: 11, width: 450, height: 22)
         cloudContextSwitch.frame = NSRect(x: 478, y: 10, width: 44, height: 26)
         cloudContextSwitch.target = self; cloudContextSwitch.action = #selector(contextChanged)
-        cloudContextSwitch.setAccessibilityLabel("允許將錄音上下文傳送至 OpenAI")
         cloudContextRow.addSubview(cloudTitle); cloudContextRow.addSubview(cloudContextSwitch)
         contextDetail.font = .systemFont(ofSize: 11); contextDetail.textColor = .secondaryLabelColor
         contextDetail.frame = NSRect(x: 20, y: 17, width: 524, height: 60)
@@ -76,7 +75,7 @@ final class TranscriptionSettingsWindow: NSWindowController {
     func refresh() {
         do {
             let preferences = try store.load()
-            backend.selectItem(at: preferences.backend == .openAI ? 1 : 0)
+            backend.selectItem(at: TranscriptionBackend.allCases.firstIndex(of: preferences.backend) ?? 0)
             consent.state = preferences.cloudAudioConsent ? .on : .off
             contextSwitch.state = preferences.recordingContextEnabled ? .on : .off
             cloudContextSwitch.state = preferences.cloudContextConsent ? .on : .off
@@ -88,7 +87,7 @@ final class TranscriptionSettingsWindow: NSWindowController {
         updateDetails()
     }
     @objc private func changed() {
-        if selected == .localWhisper { consent.state = .off }
+        if !selected.isCloud { consent.state = .off }
         status.stringValue = "尚未儲存。"; updateDetails()
     }
     @objc private func contextChanged() {
@@ -96,23 +95,38 @@ final class TranscriptionSettingsWindow: NSWindowController {
         status.stringValue = "尚未儲存。"; updateDetails()
     }
     private func updateDetails() {
-        let cloud = selected == .openAI
+        let choice = selected
+        let cloud = choice.isCloud
+        let provider = choice.providerTitle
         consent.isHidden = !cloud; keyButton.isEnabled = cloud
-        detail.stringValue = cloud
-            ? "使用 OpenAI gpt-transcribe，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 OpenAI；單次錄音上限 25 MB。\n沿用 OpenAI 金鑰，不改變文字校正服務商。輸出仍轉為繁體中文。"
-            : "使用本機 Whisper Small／Large-v3 Turbo，錄音不會送到雲端。\n可從選單選擇本機模型。後續文字校正與翻譯仍依原有設定處理。"
+        consent.title = "我同意將之後的錄音傳送至 \(provider) 進行轉寫。"
+        keyButton.title = cloud ? "\(provider) 金鑰設定…" : "金鑰設定…"
+        cloudTitle.stringValue = "允許傳送至 \(cloud ? provider : "雲端")"
+        cloudContextSwitch.setAccessibilityLabel("允許將錄音上下文傳送至 \(cloud ? provider : "雲端")")
+        switch choice {
+        case .localWhisper:
+            detail.stringValue = "使用本機 Whisper Small／Large-v3 Turbo，錄音不會送到雲端。\n可從選單選擇本機模型。後續文字校正與翻譯仍依原有設定處理。"
+        case .openAI:
+            detail.stringValue = "使用 OpenAI gpt-transcribe，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 OpenAI；單次錄音上限 25 MB。\n沿用 OpenAI 金鑰，不改變文字校正服務商。輸出仍轉為繁體中文。"
+        case .geminiTranscribe:
+            detail.stringValue = "使用 Google \(GeminiAudioWire.transcribeModel)，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 Google；單次錄音約 7 分鐘以內。字典詞會一併送出輔助辨識。\n沿用 Google 金鑰，不改變文字校正服務商；辨識後仍依原有設定校正。"
+        case .geminiDirect:
+            detail.stringValue = "使用 Google \(GeminiAudioWire.directModel)，一次請求同時完成辨識與上下文校正，不再另送校正。\n每次結束錄音後，音訊與字典將傳送至 Google；單次錄音約 7 分鐘以內。\n沿用 Google 金鑰；中翻英仍依原有翻譯服務商處理。"
+        }
         cloudContextRow.isHidden = contextSwitch.state == .off
         contextDetail.stringValue = contextSwitch.state == .off
             ? "預設關閉。開啟後只讀取目前輸入框附近文字；不截圖、不儲存內容。\n不支援的輸入框會自動略過，錄音照常進行。"
             : (cloud && cloudContextSwitch.state == .off
-                ? "目前選用雲端辨識；未允許傳送，上下文暫不擷取。\n開啟上方選項後，附近文字會隨錄音送至 OpenAI。"
-                : "不截圖、不儲存內容。雲端辨識時，僅在允許後隨錄音傳送。\n若上下文進入辨識結果，後續雲端校正／翻譯仍可能收到。")
+                ? "目前選用雲端辨識；未允許傳送，上下文暫不擷取。\n開啟上方選項後，附近文字會隨錄音送至 \(provider)。"
+                : (choice == .geminiTranscribe
+                    ? "Gemini Transcribe 不接受上下文文字；此模式只送字典詞，不送附近文字。"
+                    : "不截圖、不儲存內容。雲端辨識時，僅在允許後隨錄音傳送。\n若上下文進入辨識結果，後續雲端校正／翻譯仍可能收到。"))
         saveButton.title = "儲存設定"
     }
-    @objc private func openKey() { onOpenAIKey?() }
+    @objc private func openKey() { if let provider = selected.cloudProvider { onKey?(provider) } }
     @objc private func save() {
         do {
-            let preferences = try TranscriptionPreferences(backend: selected, cloudAudioConsent: selected == .openAI && consent.state == .on, recordingContextEnabled: contextSwitch.state == .on, cloudContextConsent: contextSwitch.state == .on && cloudContextSwitch.state == .on).validated()
+            let preferences = try TranscriptionPreferences(backend: selected, cloudAudioConsent: selected.isCloud && consent.state == .on, recordingContextEnabled: contextSwitch.state == .on, cloudContextConsent: contextSwitch.state == .on && cloudContextSwitch.state == .on).validated()
             if let onSave { try onSave(preferences) } else { try store.save(preferences) }
             status.stringValue = "已儲存；下一次錄音使用：" + preferences.backend.title
         } catch { status.stringValue = (error as? TranscriptionError)?.errorDescription ?? "儲存失敗，原有選擇未變更。" }

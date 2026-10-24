@@ -80,7 +80,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         self.keyLocations = keyLocations
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 610, height: 455),
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = keyOnlyProvider == nil ? "edgelesstype — API 設定" : "edgelesstype — OpenAI 金鑰"
+        window.title = keyOnlyProvider == nil ? "edgelesstype — API 設定" : "edgelesstype — \(keyOnlyProvider!.title) 金鑰"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
@@ -104,7 +104,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
             view.addSubview(field)
         }
         label("API 設定", NSRect(x: 26, y: 400, width: 500, height: 34), bold: true)
-        label(keyOnlyProvider == nil ? "選一家服務商，儲存自己的 API 金鑰即可。" : "儲存 OpenAI 語音辨識金鑰；不改變文字校正服務商。", NSRect(x: 26, y: 368, width: 550, height: 24))
+        label(keyOnlyProvider == nil ? "選一家服務商，儲存自己的 API 金鑰即可。" : "儲存 \(keyOnlyProvider!.title) 語音辨識金鑰；不改變文字校正服務商。", NSRect(x: 26, y: 368, width: 550, height: 24))
         provider.frame = NSRect(x: 26, y: 321, width: 270, height: 32)
         provider.addItems(withTitles: CloudProvider.allCases.map(\.title))
         provider.target = self; provider.action = #selector(changed)
@@ -123,7 +123,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         addButton(keyOnlyProvider == nil ? "儲存並使用" : "儲存金鑰", NSRect(x: 26, y: 153, width: 167, height: 35), #selector(save))
         if keyOnlyProvider == nil { addButton("測試連線", NSRect(x: 219, y: 153, width: 167, height: 35), #selector(test)) }
         addButton("刪除金鑰", NSRect(x: 413, y: 153, width: 167, height: 35), #selector(deleteKey))
-        label("金鑰加密保存在本機，不會顯示原文。各家金鑰分開保存。\n本機 Whisper 不上傳錄音；選用雲端辨識才傳送音訊至 OpenAI。",
+        label("金鑰加密保存在本機，不會顯示原文。各家金鑰分開保存。\n本機 Whisper 不上傳錄音；選用雲端辨識才傳送音訊至所選服務商。",
               NSRect(x: 26, y: 84, width: 550, height: 55))
         status.frame = NSRect(x: 26, y: 18, width: 550, height: 56)
         status.textColor = .secondaryLabelColor; view.addSubview(status)
@@ -139,13 +139,14 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         refreshStatus()
     }
     private func refreshModels() {
-        models.stringValue = keyOnlyProvider == nil ? CloudModelStatus.description(for: selection) : "語音辨識：" + OpenAITranscriptionWire.model
-        models.toolTip = keyOnlyProvider == nil ? CloudModelStatus.detail(for: selection) : "與文字校正共用 OpenAI 金鑰，辨識方式需另外在語音辨識設定選擇。"
+        let speechModels = TranscriptionBackend.allCases.filter { $0.cloudProvider == keyOnlyProvider }.compactMap(\.cloudModel).joined(separator: "／")
+        models.stringValue = keyOnlyProvider == nil ? CloudModelStatus.description(for: selection) : "語音辨識：" + speechModels
+        models.toolTip = keyOnlyProvider == nil ? CloudModelStatus.detail(for: selection) : "與文字校正共用 \(selection.title) 金鑰，辨識方式需另外在語音辨識設定選擇。"
     }
     private func refreshStatus() {
         let exists = (try? store(selection).verify()) == true
         let active = (try? preferencesStore.load().provider) == selection
-        savedStatus.stringValue = (exists ? "已儲存金鑰" : "尚未儲存金鑰") + (keyOnlyProvider != nil ? " · OpenAI 共用金鑰" : (active ? " · 目前選用" : " · 尚未選用"))
+        savedStatus.stringValue = (exists ? "已儲存金鑰" : "尚未儲存金鑰") + (keyOnlyProvider != nil ? " · \(selection.title) 共用金鑰" : (active ? " · 目前選用" : " · 尚未選用"))
     }
     @objc private func openKeyPage() { NSWorkspace.shared.open(selection.keyPage) }
     @objc private func pasteKey() { keyField.stringValue = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
@@ -158,7 +159,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
             } else if (try? store(selection).verify()) != true { throw CloudError.missingKey }
             if keyOnlyProvider == nil { try preferencesStore.save(CloudPreferences(provider: selection)) }
             keyField.stringValue = ""; refreshStatus()
-            status.stringValue = keyOnlyProvider == nil ? "已儲存並選用 \(selection.title)。可按「測試連線」確認。" : "OpenAI 金鑰已儲存。文字校正服務商未變更。"
+            status.stringValue = keyOnlyProvider == nil ? "已儲存並選用 \(selection.title)。可按「測試連線」確認。" : "\(selection.title) 金鑰已儲存。文字校正服務商未變更。"
         } catch { show(error) }
     }
     @objc private func deleteKey() {

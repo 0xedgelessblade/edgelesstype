@@ -20,9 +20,9 @@ Paste diagnostics write at most 64 fixed stage labels for the latest offer to a 
 
 ## Optional audio transcription
 
-Local Whisper remains the default. Audio upload requires a separately stored OpenAI transcription choice and explicit audio consent. The choice is captured when recording starts. Only that recording is posted to the fixed HTTPS OpenAI transcription endpoint; redirects, cookies, credential storage and persistent response caching are disabled. The upload uses a generic filename, never a personal file path. Audio, response text and keys are not logged. The existing temporary recording is deleted after processing, including failures.
+Local Whisper remains the default. Audio upload requires a separately stored OpenAI or Google transcription choice and explicit audio consent. The choice is captured when recording starts. Only that recording is posted to the fixed HTTPS endpoint of the chosen provider (OpenAI transcription, or Google generativelanguage for the two Gemini modes); redirects, cookies, credential storage and persistent response caching are disabled. The upload uses a generic filename, never a personal file path. Audio, response text and keys are not logged. The existing temporary recording is deleted after processing, including failures.
 
-The OpenAI transcription option reuses the encrypted OpenAI key record, independently of the selected text-correction provider. Merely opening the settings or saving a key does not enable audio upload. Preferences are runtime data in `Config/transcription.json` and are excluded from Git and public exports. Tests use synthetic bytes and URLProtocol fixtures, not private recordings or real credentials.
+The OpenAI transcription option reuses the encrypted OpenAI key record, and the Gemini options reuse the encrypted Google key record, independently of the selected text-correction provider. Gemini requests also carry dictionary words; the one-pass mode carries the fixed correction prompt. Merely opening the settings or saving a key does not enable audio upload. Preferences are runtime data in `Config/transcription.json` and are excluded from Git and public exports. Tests use synthetic bytes and URLProtocol fixtures, not private recordings or real credentials.
 
 ## Local code-signing identity
 
@@ -33,7 +33,7 @@ HTTP session reuse retains connection state, not disk response caches, cookies o
 
 ## Optional recording context and content retention
 
-Recording context is off by default. When enabled, the reader requests a bounded range near the active cursor, without screenshots, HTML, full-document fallback or browsing other windows. Secure/protected fields and unsupported or timed-out queries are skipped. OpenAI mode does not capture nearby text unless audio consent and the separate cloud-context consent are both enabled. Approved context goes only in that recording's OpenAI transcription prompt; it is not separately attached to correction or translation.
+Recording context is off by default. When enabled, the reader requests a bounded range near the active cursor, without screenshots, HTML, full-document fallback or browsing other windows. Secure/protected fields and unsupported or timed-out queries are skipped. Cloud modes do not capture nearby text unless audio consent and the separate cloud-context consent are both enabled. Approved context goes only in that recording's transcription prompt (OpenAI, or the Gemini one-pass request; Gemini Transcribe has no prompt field and never receives it); it is not separately attached to correction or translation.
 
 Context is kept in memory for one processing job; cancellation and completion reject late capture results. It is not saved as history, diagnostics, fixtures or backups. The old external command-line recognition path does not receive context in process arguments. If prompted terms appear in the transcript, later enabled cloud correction/translation can receive those terms.
 

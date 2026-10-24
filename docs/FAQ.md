@@ -12,7 +12,7 @@ Apple silicon M 系列、macOS 26 以上。不支援 Intel、Windows 或 Linux�
 
 ## 完全離線嗎？ / Is it fully offline?
 
-本機聽寫可以離線。選用 OpenAI 辨識會上傳錄音；啟用雲端文字校正或翻譯會傳送文字。安裝下載本身也需要網路。不能把「預設本機」描述成「所有模式都離線」。[資料流](ARCHITECTURE.md)
+本機聽寫可以離線。選用 OpenAI 或 Google 雲端辨識會上傳錄音；啟用雲端文字校正或翻譯會傳送文字。安裝下載本身也需要網路。不能把「預設本機」描述成「所有模式都離線」。[資料流](ARCHITECTURE.md)
 
 ## 免費嗎？ / Is it free?
 

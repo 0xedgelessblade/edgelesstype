@@ -177,7 +177,8 @@ struct Transcriber {
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
         return try TranscriptionRouter.run(transcription,
             local: { try localTranscribe(url: url, cancellation: cancellation) },
-            cloud: { try OpenAITranscriptionService.transcribe(url: url, preferences: transcription, onProgress: onProgress, onTimings: onTimings, context: recordingContext, cancellation: cancellation) })
+            cloud: { try CloudTranscriptionService.transcribe(url: url, preferences: transcription, terms: vocabulary?.entries.map(\.word) ?? config.terms,
+                onProgress: onProgress, onTimings: onTimings, context: recordingContext, cancellation: cancellation) })
     }
 
     private func localTranscribe(url: URL, cancellation: ProcessingCancellation?) throws -> String {
@@ -334,7 +335,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var startedAt: Date?
     private var recordingVocabulary = VocabularySettings()
     private var apiEditor: APISettingsWindow?
-    private var transcriptionKeyEditor: APISettingsWindow?
+    private var transcriptionKeyEditors: [CloudProvider: APISettingsWindow] = [:]
     private var transcriptionEditor: TranscriptionSettingsWindow?
     private var recordingTranscription = TranscriptionPreferences()
     private var transcriptionBackend: TranscriptionBackend {
@@ -505,10 +506,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard session == .idle, !busy else { panel.showMessage(TranscriptionError.busy.errorDescription!); return }
         if transcriptionEditor == nil {
             let editor = TranscriptionSettingsWindow(store: AppPaths.transcriptionStore)
-            editor.onOpenAIKey = { [weak self] in
+            editor.onKey = { [weak self] provider in
                 guard let self else { return }
-                if self.transcriptionKeyEditor == nil { self.transcriptionKeyEditor = APISettingsWindow(keyOnlyProvider: .openai) }
-                self.transcriptionKeyEditor?.showWindow(nil)
+                if self.transcriptionKeyEditors[provider] == nil { self.transcriptionKeyEditors[provider] = APISettingsWindow(keyOnlyProvider: provider) }
+                self.transcriptionKeyEditors[provider]?.showWindow(nil)
                 NSApp.activate(ignoringOtherApps: true)
             }
             editor.onSave = { [weak self] preferences in
@@ -518,7 +519,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 if preferences.backend == .localWhisper { self.warmSpeechEngine() }
                 else {
                     ResidentSpeechEngine.shared.shutdown()
-                    self.vocabularyEditor?.setModelStatus("GPT Transcribe · OpenAI 雲端")
+                    self.vocabularyEditor?.setModelStatus(preferences.backend.statusTitle)
                 }
             }
             transcriptionEditor = editor
@@ -547,8 +548,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                 editor.onQuit = { [weak self] in self?.quit() }
                 vocabularyEditor = editor
             }
-            if transcriptionBackend == .openAI {
-                vocabularyEditor?.setModelStatus("GPT Transcribe · OpenAI 雲端")
+            if transcriptionBackend.isCloud {
+                vocabularyEditor?.setModelStatus(transcriptionBackend.statusTitle)
             } else if let resident = config?.residentSpeech {
                 let info = ResidentSpeechEngine.shared.diagnostics
                 vocabularyEditor?.setModelStatus(info.ready && info.metal && info.pid != nil
@@ -581,7 +582,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func warmSpeechEngine() {
         guard transcriptionBackend == .localWhisper else {
-            vocabularyEditor?.setModelStatus("GPT Transcribe · OpenAI 雲端")
+            vocabularyEditor?.setModelStatus(transcriptionBackend.statusTitle)
             return
         }
         guard let config, let resident = config.residentSpeech else { return }
@@ -734,6 +735,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         recordingVocabulary = (try? AppPaths.vocabularyStore.load(fallbackTerms: config.terms))
             ?? VocabularySettings(entries: config.terms.map { VocabularyEntry(word: $0) })
         prewarmCorrectionConnection()
+        prewarmAudioConnection()
         // Capture the destination at the Fn gesture, before any asynchronous cue.
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         contextCapture?.discard()
@@ -809,7 +811,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let mode = session
         var timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds,
             mode: mode == .translation ? "translation" : "dictation",
-            model: recordingTranscription.backend == .openAI ? OpenAITranscriptionWire.model : (config?.residentSpeech?.displayName ?? "Small CPU"))
+            model: recordingTranscription.backend.cloudModel ?? (config?.residentSpeech?.displayName ?? "Small CPU"))
         session = .idle
         pendingRecordingStart.cancel()
         soundPlayer.cancelPreview()
@@ -832,7 +834,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         timing.recordingStopSeconds = timing.elapsed()
         let startedTiming = timing
         status.button?.title = mode == .translation ? "譯中" : "轉寫"
-        panel.showWorking(recordingTranscription.backend == .openAI ? .uploading : .recognizing)
+        panel.showWorking(recordingTranscription.backend.isCloud ? .uploading : .recognizing)
         launchProcessing(url: url, mode: mode, timing: startedTiming)
     }
 
@@ -933,7 +935,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         let correctionStarted = DispatchTime.now().uptimeNanoseconds
         let corrected: String
-        if ProcessingPlan.separateCorrection(mode: mode, enabled: recordingVocabulary.contextCorrectionEnabled) && !transcript.isEmpty {
+        if recordingTranscription.backend.mergesCorrection {
+            // The audio request already returned corrected text; no second cloud round trip.
+            timing.correctionProvider = recordingTranscription.backend.cloudProvider?.rawValue
+            timing.correctionOutcome = "merged"
+            corrected = transcript
+        } else if ProcessingPlan.separateCorrection(mode: mode, enabled: recordingVocabulary.contextCorrectionEnabled) && !transcript.isEmpty {
             updateUI(for: job) { self.status.button?.title = "校正"; self.panel.showWorking(.correcting) }
             timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
             if !pathSatisfied {
@@ -960,7 +967,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard !cancellation.isCancelled else { return }
         timing.correctionSeconds = Double(DispatchTime.now().uptimeNanoseconds - correctionStarted)/1e9
         let plan = Policy.plan(mode: mode, transcript: corrected, polishEnabled: config.polish.enabled,
-            acceptModelText: ["corrected", "unchanged"].contains(timing.correctionOutcome))
+            acceptModelText: OutputPolicy.acceptsModelText(outcome: timing.correctionOutcome))
         switch plan {
         case .drop:
             updateUI(for: job) { self.panel.hide() }
@@ -968,7 +975,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             // Submit once. Offering the polish as another paste duplicates
             // text that has already reached the destination.
             var finalText = rough
-            if !recordingVocabulary.contextCorrectionEnabled,
+            if !recordingVocabulary.contextCorrectionEnabled, !recordingTranscription.backend.mergesCorrection,
                Policy.shouldCallPolish(transcript: rough, polishEnabled: config.polish.enabled),
                OutputPolicy.correctionWarning(outcome: timing.correctionOutcome) == nil {
                 if !pathSatisfied {
@@ -1031,7 +1038,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var ready = timing
         ready.timeToPasteReadySeconds = ready.elapsed()
         updateUI(for: job) {
-            if ["corrected", "unchanged"].contains(outcome) {
+            if OutputPolicy.acceptsModelText(outcome: outcome) {
                 self.correctionDegraded = false
                 self.setStatus(AppIdentity.displayName)
             }
@@ -1040,7 +1047,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
             self.pendingTiming = ready
             self.panel.showPending(delivered, warning: OutputPolicy.correctionWarning(outcome: outcome), outcome: outcome)
-            self.paster.offer(delivered, into: job.targetPID, acceptModelText: ["corrected", "unchanged"].contains(outcome))
+            self.paster.offer(delivered, into: job.targetPID, acceptModelText: OutputPolicy.acceptsModelText(outcome: outcome))
         }
     }
 
@@ -1060,6 +1067,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard ConnectionWarmup.shouldSend(offlineProbe: CloudAccess.offlineProbe, pathSatisfied: pathSatisfied, host: host, now: now, lastSent: warmedAt[host]) else { return }
         warmedAt[host] = now
         CloudClient.shared.prewarm(url)
+    }
+
+    /// Keyless TLS warmup for the cloud audio host, on the audio client's own session.
+    private func prewarmAudioConnection() {
+        guard recordingTranscription.backend.isCloud, recordingTranscription.cloudAudioConsent else { return }
+        let endpoint = recordingTranscription.backend == .openAI ? URL(string: "https://api.openai.com/")! : GeminiAudioWire.transcribeEndpoint
+        guard let url = ConnectionWarmup.hostURL(from: endpoint), let host = url.host else { return }
+        let now = Date(); let key = "audio:" + host
+        guard ConnectionWarmup.shouldSend(offlineProbe: CloudAccess.offlineProbe, pathSatisfied: pathSatisfied, host: host, now: now, lastSent: warmedAt[key]) else { return }
+        warmedAt[key] = now
+        CloudAudioClient.shared.prewarm(url)
     }
 
     private func copyRetryText() {

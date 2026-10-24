@@ -439,17 +439,20 @@
       "queries": [
         "GPT transcript",
         "gpt-transcribe",
+        "gemini-3.5-transcribe",
+        "Gemini 一趟式",
         "雲端語音辨識",
-        "Whisper OpenAI 切換"
+        "Whisper OpenAI Google 切換"
       ],
       "article": "README.md#選擇第一階段語音辨識",
       "source_files": [
         "Sources/EdgelessTypeCore/Transcription.swift",
-        "Sources/EdgelessType/OpenAITranscriptionService.swift",
+        "Sources/EdgelessType/CloudTranscriptionService.swift",
         "Sources/EdgelessType/TranscriptionSettingsWindow.swift"
       ],
       "test_files": [
-        "Tests/EdgelessTypeTests/TranscriptionTests.swift"
+        "Tests/EdgelessTypeTests/TranscriptionTests.swift",
+        "Tests/EdgelessTypeTests/GeminiTranscriptionTests.swift"
       ],
       "test_names": [
         "testMissingSettingsDefaultToLocalAndNeverRunCloudClosure",

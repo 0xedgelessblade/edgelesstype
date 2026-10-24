@@ -1,6 +1,6 @@
 # Architecture / 架構與資料流
 
-edgelesstype is a native macOS dictation app for Apple silicon. Speech recognition defaults to local Whisper. Explicitly consented OpenAI transcription sends the completed recording to OpenAI; optional text correction and translation use separately selected providers. Insertion is checked against the focused editor rather than inferred from clipboard activity.
+edgelesstype is a native macOS dictation app for Apple silicon. Speech recognition defaults to local Whisper. Explicitly consented OpenAI or Google Gemini transcription sends the completed recording to that provider; optional text correction and translation use separately selected providers. Insertion is checked against the focused editor rather than inferred from clipboard activity.
 
 **範圍：M 系列 Mac、macOS 26 以上。** 本文件描述目前原始碼，不是跨平台框架設計。入口與限制見 [README](../README.md)。
 
@@ -14,10 +14,10 @@ flowchart TD
     A --> Q{Context enabled and permitted for backend?}
     Q -->|Yes| R[Bounded nearby text in memory; skip unsupported fields]
     R -->|Local backend| D
-    R -->|OpenAI backend and separate context consent| E
+    R -->|Cloud backend and separate context consent| E
     B --> C{Explicit backend choice}
     C -->|Local default| D[Whisper on this Mac]
-    C -->|Saved cloud audio consent| E[OpenAI audio transcription]
+    C -->|Saved cloud audio consent| E[OpenAI or Gemini audio transcription]
     D --> F{Meaningful text?}
     E --> F
     F -->|No| G[Hide panel; no paste]
@@ -56,9 +56,9 @@ flowchart TD
 
 ## Privacy boundaries
 
-- **錄音**：暫存 PCM WAV。預設交給本機 Whisper；只有明確選擇並同意雲端辨識時，才送至固定 OpenAI 端點。處理後刪除本機暫存檔。
+- **錄音**：暫存 PCM WAV。預設交給本機 Whisper；只有明確選擇並同意雲端辨識時，才送至固定的 OpenAI 或 Google 端點。處理後刪除本機暫存檔。
 - **貼上驗證快照**：僅在本機記憶體用於貼入前後比對，不作為雲端校正輸入。
-- **錄音上下文**：與貼上快照分開。使用者開啟後非同步讀取游標附近最多 160 個 UTF-16 單位，供常駐本機 Whisper；OpenAI 模式須額外同意才擷取並附在轉寫 prompt。原始文字不存檔、不另外傳送校正／翻譯；若被模型帶入逐字稿，後續雲端文字處理可能收到。
+- **錄音上下文**：與貼上快照分開。使用者開啟後非同步讀取游標附近最多 160 個 UTF-16 單位，供常駐本機 Whisper；雲端模式須額外同意才擷取並附在轉寫 prompt（Gemini Transcribe 沒有 prompt 欄位，不送）。原始文字不存檔、不另外傳送校正／翻譯；若被模型帶入逐字稿，後續雲端文字處理可能收到。
 - **雲端文字處理**：轉寫文字、已啟用的字典和固定提示詞。字典的內部 UUID 與空欄位不送出。音訊是否上傳由上一項獨立決定。
 - **API 金鑰**：加密存檔；解密金鑰表留在使用者本機設定目錄。兩者不加入公開來源包。
 - **診斷**：時間、程序狀態及校正結果類型，不保存錄音、轉寫內容或剪貼簿原文。
@@ -72,9 +72,9 @@ flowchart TD
 
 目前的貼入驗證是有證據的 best effort，並非跨 App 的交易協定。當目標不提供可讀取文字、焦點已改變、權限不完整或元件變更時，可能需要手動貼上。請一起閱讀 [相容性與已知限制](COMPATIBILITY.md) 和 [問題索引](TROUBLESHOOTING.md)。
 
-## Optional first-stage OpenAI transcription
+## Optional first-stage cloud transcription
 
-The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`; it never silently falls back to another backend. Both results enter the same final-output pipeline. Dictation can use full-text correction; translation combines enabled correction into its translation request. `Config/transcription.json` stores the backend choice, audio consent, recording-context preference and separate cloud-context consent, never captured text. See [privacy boundaries](../SECURITY.md).
+The speech backend is selected separately from text correction. The default uses local Whisper. Explicitly consented OpenAI mode uploads the just-completed WAV recording to the fixed transcription endpoint using `gpt-transcribe`. Two Google modes send the same WAV inline (base64) with the stored Google key: Gemini Transcribe posts to the Interactions API with `gemini-3.5-transcribe` (smart mode, dictionary words as custom vocabulary) and its transcript enters the normal correction stage; Gemini one-pass posts to `gemini-3.8-flash` generateContent with the correction prompt and dictionary, and its reply is already corrected text, so no separate correction request follows (timing outcome `merged`). No backend ever silently falls back to another. All results enter the same final-output pipeline. Dictation can use full-text correction; translation combines enabled correction into its translation request. `Config/transcription.json` stores the backend choice, audio consent, recording-context preference and separate cloud-context consent, never captured text. See [privacy boundaries](../SECURITY.md).
 
 ## Processing, signing and local updates
 

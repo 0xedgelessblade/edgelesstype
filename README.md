@@ -2,20 +2,20 @@
 
 <img src="Resources/AppIcon-source.png" width="96" alt="edgelesstype app icon">
 
-**Open-source voice dictation for Apple silicon Macs.** Local Whisper or opt-in OpenAI transcription, optional text correction, and evidence-based insertion into supported input fields.
+**Open-source voice dictation for Apple silicon Macs.** Local Whisper or opt-in OpenAI／Google Gemini transcription, optional text correction, and evidence-based insertion into supported input fields.
 
 公開作者：[edgelessblade](https://github.com/0xedgelessblade) · [MIT License](LICENSE) · [引用資訊](CITATION.cff) · [更新日誌 / Changelog](CHANGELOG.md)
 
 給 **Apple Silicon M 系列 Mac、macOS 26 以上**使用的開源語音輸入 App。
-預設使用本機 Whisper；也可在「語音辨識」明確選用 OpenAI GPT Transcribe，上傳錄音轉成文字。後續上下文校正與中翻英服務可分開設定。
+預設使用本機 Whisper；也可在「語音辨識」明確選用 OpenAI GPT Transcribe 或 Google Gemini，上傳錄音轉成文字。後續上下文校正與中翻英服務可分開設定。
 
 [使用說明書](docs/USER-GUIDE.md) · [常見問題](docs/FAQ.md) · [English overview](docs/OVERVIEW.md) · [文件中心](docs/README.md) · [AI / llms.txt](llms.txt)
 
 | 功能 | 預設與選擇 |
 |---|---|
-| 語音轉文字 | 預設本機 Whisper；可另行同意 OpenAI 錄音上傳 |
+| 語音轉文字 | 預設本機 Whisper；可另行同意 OpenAI 或 Google 錄音上傳 |
 | 繁體中文、字典與中翻英 | 本機繁體轉換；校正／翻譯使用自行設定的雲端服務 |
-| 錄音上下文 | 主開關與 OpenAI 傳送同意分開，預設皆關閉 |
+| 錄音上下文 | 主開關與雲端傳送同意分開，預設皆關閉 |
 | 貼上與取消 | 自動貼入、手動補貼及處理中取消；不自動送出訊息 |
 
 ## 不會 CLI？交給你的 AI 安裝
@@ -107,7 +107,7 @@ bash Scripts/pack-app.sh
 | 服務商 | 預設校正／翻譯模型 | 金鑰入口 |
 |---|---|---|
 | xAI | 校正 `grok-4.3`；翻譯 `grok-4.7` | [xAI Console](https://console.x.ai/) |
-| Google | `gemini-3.8-flash` | [Google AI Studio](https://aistudio.google.com/api-keys) |
+| Google | `gemini-3.8-flash`；思考等級 `low`（此模型不接受 `minimal`） | [Google AI Studio](https://aistudio.google.com/api-keys) |
 | Claude | `claude-haiku-5-5`；校正與翻譯皆關閉推理 | [Claude Platform](https://platform.claude.com/settings/keys) |
 | OpenAI | `gpt-6-luna` | [OpenAI Platform](https://platform.openai.com/api-keys) |
 
@@ -137,7 +137,7 @@ UI 刻意只提供四家服務商，不做大型模型目錄。模型可用性�
 
 每位使用者的金鑰密文儲存在自己專案的 `private/credentials.encrypted.json`；解密鑰匙在自己 Mac 的 `~/.config/codex-secrets/edgelesstype-keyring.json`。後者是沿用的本機目錄名稱，不是 Codex 雲端。兩者都不公開；呼叫 API 時才以 HTTPS 向所選服務商提供金鑰認證。詳見 [安全說明](SECURITY.md)。
 
-公開版不含開發者的金鑰、個人設定、使用紀錄、錄音、編譯 App 或私人字典。文字校正／翻譯送出轉寫文字與字典；只有明確選用 OpenAI 雲端語音辨識並同意後，才傳送錄音。其他視窗內容與剪貼簿驗證資料不上傳。OpenAI Responses 文字請求設定 `store: false`；音訊 API 不沿用該參數。服務商自身的資料政策另依其規定。
+公開版不含開發者的金鑰、個人設定、使用紀錄、錄音、編譯 App 或私人字典。文字校正／翻譯送出轉寫文字與字典；只有明確選用 OpenAI 或 Google 雲端語音辨識並同意後，才傳送錄音。其他視窗內容與剪貼簿驗證資料不上傳。OpenAI Responses 文字請求設定 `store: false`；音訊 API 不沿用該參數。服務商自身的資料政策另依其規定。
 
 ## 測試與公開來源包
 
@@ -165,16 +165,18 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 
 - **Whisper（本機）**：預設選項；Small／Large-v3 Turbo 在本機辨識，不傳送錄音。
 - **GPT Transcribe（OpenAI 雲端）**：固定使用 `gpt-transcribe`。需勾選錄音上傳同意並儲存；之後每次結束錄音才傳送該次音訊，需要網路、OpenAI 金鑰與 API 額度。
+- **Gemini Transcribe（Google 雲端）**：固定使用 `gemini-3.5-transcribe`，走 Interactions API，開啟 smart 模式（去除語氣填充詞）並把字典詞作為 `custom_vocabulary` 送出；辨識結果仍依原有設定進行文字校正。此模式不接受附近文字上下文。
+- **Gemini 一趟式辨識＋校正（Google 雲端）**：固定使用 `gemini-3.8-flash` 的 `generateContent`，錄音與字典一次送出，模型直接回傳已依語境校正的文字，之後不再另送校正請求；中翻英仍依翻譯服務商處理。計時檔的校正狀態記為 `merged`。
 
-「OpenAI 金鑰設定」沿用加密保存的 OpenAI 紀錄，不更改文字校正服務商。雲端單次錄音上限 25 MB；過大時會提示分段錄製或切回本機，不會自動切換辨識服務。API 回覆仍在本機轉為繁體。
+「金鑰設定」沿用該服務商加密保存的紀錄，不更改文字校正服務商。OpenAI 單次錄音上限 25 MB；Google 兩種模式的 WAV 以 base64 內嵌，單次約 14 MB（16 kHz 單聲道約 7 分鐘）；過大時會提示分段錄製或切回本機，不會自動切換辨識服務。API 回覆仍在本機轉為繁體。
 
-介面切換與隔離傳輸測試已驗證；沒有使用真實帳戶金鑰或上傳私人錄音作測試。官方介面：[File transcription](https://developers.openai.com/api/docs/guides/speech-to-text)。
+介面切換與隔離傳輸測試已驗證；沒有使用真實帳戶金鑰或上傳私人錄音作測試。官方介面：[OpenAI file transcription](https://developers.openai.com/api/docs/guides/speech-to-text)、[Gemini audio transcription](https://ai.google.dev/gemini-api/docs/transcribe)、[Gemini audio understanding](https://ai.google.dev/gemini-api/docs/audio)。
 
 ### 錄音上下文（自行開啟）
 
 「語音辨識…」中的「錄音上下文」預設關閉。開啟後，在錄音開始時非同步讀取目前輸入框游標附近最多 160 個 UTF-16 單位的純文字，供常駐本機 Whisper 辨識參考；舊式外部命令列辨識不附加上下文，避免文字出現在程序參數。不截圖、不讀取整份文件、不保存上下文。安全密碼欄位、無法確認的單行欄位及不支援文字範圍查詢的 App 會略過；超時或切换焦點也略過，錄音不等待。
 
-「允許傳送至 OpenAI」是獨立且預設關閉的選項。只有主開關、此選項與雲端錄音同意皆開啟，且選用 OpenAI 辨識時，才會擷取並將附近文字附於轉寫請求的 prompt。若未允許，雲端模式不擷取上下文。原始上下文不另送文字校正／翻譯服務，但若模型把提示文字帶入逐字稿，後續啟用的雲端處理仍可能收到。
+「允許傳送至 OpenAI／Google」是獨立且預設關閉的選項。只有主開關、此選項與雲端錄音同意皆開啟，且選用雲端辨識時，才會擷取並將附近文字附於轉寫請求的 prompt（Gemini Transcribe 模式沒有 prompt 欄位，不送附近文字）。若未允許，雲端模式不擷取上下文。原始上下文不另送文字校正／翻譯服務，但若模型把提示文字帶入逐字稿，後續啟用的雲端處理仍可能收到。
 
 關閉主開關並儲存會一併撤銷上下文的雲端傳送同意。內容只供單次錄音使用，取消或錄音結束後拒收晚到的擷取結果。這不是準確度或速度提升保證。
 

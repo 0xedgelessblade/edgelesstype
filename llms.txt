@@ -1,6 +1,6 @@
 # edgelesstype
 
-> Open-source native voice dictation for Apple silicon Macs running macOS 26+. Default local Whisper, optional OpenAI audio transcription, Traditional Chinese output, separate cloud text correction and Chinese-to-English translation.
+> Open-source native voice dictation for Apple silicon Macs running macOS 26+. Default local Whisper, optional OpenAI or Google Gemini audio transcription, Traditional Chinese output, separate cloud text correction and Chinese-to-English translation.
 
 Canonical project: https://github.com/0xedgelessblade/edgelesstype. Public maintainer: edgelessblade. License: MIT for project code; third-party licenses remain separate.
 

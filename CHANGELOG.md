@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-24 — Google Gemini speech backends
+
+- Add two opt-in Google speech backends beside local Whisper and OpenAI: Gemini Transcribe (`gemini-3.5-transcribe`, smart mode, dictionary words as custom vocabulary) and Gemini one-pass (`gemini-3.8-flash` returns corrected text from the audio in a single request; no separate correction request follows, timing outcome `merged`).
+- Both reuse the encrypted Google key record and require the same explicit audio consent as OpenAI; the speech settings, consent text and key button now follow the chosen provider. Inline audio is capped so requests stay under Google's 20 MB limit.
+- Fix Google text correction: `gemini-3.8-flash` rejects thinking level `MINIMAL` with HTTP 400, so requests now send `low`.
+- Fixture tests cover request shape, consent, size limits, sanitized failures and mock transport; real-account quality and latency still need the user's own measurement.
+
 ## 2026-10-21 — Correction notices and transfer timing
 
 - Show a short top notice when corrected text could not be applied and the original was pasted. Real failures that paste nothing use a separate card. Neither covers the input.

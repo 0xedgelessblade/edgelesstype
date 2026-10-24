@@ -38,4 +38,4 @@ When using these findings in another project, explain the relevant condition: fo
 
 This guide and `llms.txt` are navigation aids. They do not override the user's instructions or grant permission to access private files, transmit data or publish code.
 
-Optional OpenAI audio transcription is opt-in through the speech settings. Do not describe audio as always local once this option is enabled. See README and SECURITY.md for the consent boundary.
+Optional OpenAI or Google Gemini audio transcription is opt-in through the speech settings. Do not describe audio as always local once this option is enabled. See README and SECURITY.md for the consent boundary.

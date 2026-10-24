@@ -115,7 +115,8 @@ public enum CloudWire {
             request.setValue(key, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         case .google:
-            var generation: [String: Any] = ["maxOutputTokens": 4096, "thinkingConfig": ["thinkingLevel": "MINIMAL"]]
+            // gemini-3.8-flash accepts low/medium/high only; MINIMAL is rejected with HTTP 400.
+            var generation: [String: Any] = ["maxOutputTokens": 4096, "thinkingConfig": ["thinkingLevel": "low"]]
             if body.jsonOutput { generation["responseMimeType"] = "application/json"; generation["responseJsonSchema"] = correctionSchema }
             payload = ["systemInstruction": ["parts": [["text": body.system]]],
                        "contents": [["role": "user", "parts": [["text": body.user]]]], "generationConfig": generation]

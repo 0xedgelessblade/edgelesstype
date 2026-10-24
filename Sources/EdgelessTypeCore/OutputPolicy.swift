@@ -26,12 +26,14 @@ public enum OutputPolicy {
         return result
     }
 
+    /// Outcomes whose text came from a completed model reply: corrected, unchanged, or merged into the audio request.
+    public static func acceptsModelText(outcome: String) -> Bool { ["corrected", "unchanged", "merged"].contains(outcome) }
     public static func correctionWarning(outcome: String) -> String? {
         if outcome.hasPrefix("rejected:"), let reason = CorrectionRejection(rawValue: String(outcome.dropFirst("rejected:".count))) {
             return reason.explanation + "\n已保留繁體文字，標點可能不完整。"
         }
         switch outcome {
-        case "corrected", "unchanged", "not_requested", "skipped": return nil
+        case "corrected", "unchanged", "merged", "not_requested", "skipped": return nil
         case "quota":
             return "服務端額度不足或請求過於頻繁。\n請檢查服務商帳戶或稍後再試。"
         case "rejected":
@@ -47,7 +49,7 @@ public enum OutputPolicy {
             return CorrectionNotice(label: "校正失敗", detail: reason.explanation)
         }
         switch outcome {
-        case "corrected", "unchanged", "not_requested", "skipped":
+        case "corrected", "unchanged", "merged", "not_requested", "skipped":
             return nil
         case "offline":
             return CorrectionNotice(label: "離線", detail: CloudError.offline.errorDescription ?? "目前離線，未送出校正。")
