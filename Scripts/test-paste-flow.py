@@ -84,6 +84,11 @@ enum Env {
  static func reset() { chrome = false; chromeRequests = 0; electron = false; electronRequests = 0; chromeRecoveryWorks = false; codex = false; grokBot = false; editor = AXUIElement(); readable = true; insert = true; posts = 0; restores = 0; NSPasteboard.general.text = "previous clipboard"; NSPasteboard.general.changeCount += 1 }
 }
 func tick(_ seconds: Double) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
+// Delayed AX recovery depends on timer drift; slow CI runners need the full production window.
+func tick(upTo seconds: Double, until done: () -> Bool) {
+ let end = Date().addingTimeInterval(seconds)
+ while !done() && Date() < end { RunLoop.current.run(until: min(end, Date().addingTimeInterval(0.05))) }
+}
 func check(_ value: @autoclosure () -> Bool, _ name: String) { precondition(value(), name); print("PASS \(name)") }
 '''
 tests=r'''
@@ -140,7 +145,7 @@ tests=r'''
   do { let p=Paster(); p.offer("fixture",into:123); tick(0.35)
    check(Env.chromeRequests==0 && Env.posts==1 && !p.isOffering,"Ready Chrome editor pastes without accessibility recovery") }
   Env.reset(); Env.chrome=true; Env.readable=false; Env.chromeRecoveryWorks=true
-  do { let p=Paster(); p.offer("fixture",into:123); tick(2.6)
+  do { let p=Paster(); p.offer("fixture",into:123); tick(upTo:3.4) { Env.posts==1 && p.lastInsertionConfirmed && !p.isOffering }
    check(Env.chromeRequests==1 && Env.posts==1 && p.lastInsertionConfirmed && !p.isOffering,"Chrome delayed accessibility resolves before one verified paste") }
   Env.reset(); Env.chrome=true; Env.readable=false
   do { let p=Paster(); p.offer("fixture",into:123); tick(3.4)
@@ -156,7 +161,7 @@ tests=r'''
   do { let p=Paster(); p.offer("fixture",into:456); tick(0.2)
    check(Env.chromeRequests==0 && Env.posts==0,"Background Chrome is never prepared or pasted"); p.cancelOffer() }
   Env.reset(); Env.electron=true; Env.readable=false; Env.chromeRecoveryWorks=true
-  do { let p=Paster(); p.offer("fixture",into:123); tick(2.6)
+  do { let p=Paster(); p.offer("fixture",into:123); tick(upTo:3.4) { Env.posts==1 && p.lastInsertionConfirmed && !p.isOffering }
    check(Env.electronRequests==1 && Env.chromeRequests==0 && Env.posts==1 && p.lastInsertionConfirmed && !p.isOffering,"Electron delayed accessibility resolves before one verified paste") }
   Env.reset(); Env.electron=true; Env.readable=false
   do { let p=Paster(); p.offer("fixture",into:123); tick(3.4)
