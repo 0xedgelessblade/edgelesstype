@@ -114,6 +114,10 @@ enum AudioUploadPolicy {
         guard audio.count <= maximumBytes else { throw TranscriptionError.audioTooLarge }
         guard audio.count > 44, audio.prefix(4) == Data("RIFF".utf8), audio.subdata(in: 8..<12) == Data("WAVE".utf8) else { throw TranscriptionError.invalidAudio }
     }
+    /// A stalled reply must not keep the spinner up for minutes: 15 s plus a quarter of the 16 kHz mono audio length, at most 180 s.
+    static func responseTimeout(audioBytes: Int) -> TimeInterval {
+        min(180, 15 + Double(max(0, audioBytes - 44)) / 32_000 / 4)
+    }
     static func statusError(_ status: Int) -> Error {
         switch status {
         case 400, 404: return CloudError.invalidRequest
@@ -144,7 +148,7 @@ public enum OpenAITranscriptionWire {
         body.append(audio)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/transcriptions")!)
-        request.httpMethod = "POST"; request.timeoutInterval = 180
+        request.httpMethod = "POST"; request.timeoutInterval = AudioUploadPolicy.responseTimeout(audioBytes: audio.count)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
@@ -223,7 +227,7 @@ public enum GeminiAudioWire {
             throw TranscriptionError.cloudNotEnabled
         }
         var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"; request.timeoutInterval = 180
+        request.httpMethod = "POST"; request.timeoutInterval = AudioUploadPolicy.responseTimeout(audioBytes: audio.count)
         request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)

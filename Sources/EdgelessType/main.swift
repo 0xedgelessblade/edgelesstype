@@ -924,7 +924,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             guard !cancellation.isCancelled else { return }
             let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
                 ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
-            updateUI(for: job) { self.notices.showFailure(title: "語音辨識未完成", detail: reason) }
+            updateUI(for: job) { self.panel.hide(); self.notices.showFailure(title: "語音辨識未完成", detail: reason) }
             return
         }
         guard !cancellation.isCancelled else { return }
@@ -1004,7 +1004,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case .waitForEnglish(let chinese):
             updateUI(for: job) { self.status.button?.title = "翻譯"; self.panel.showWorking(.translating) }
             if !pathSatisfied {
-                updateUI(for: job) { self.notices.showFailure(title: "翻譯未完成", detail: "目前離線，未送出翻譯。") }
+                updateUI(for: job) { self.panel.hide(); self.notices.showFailure(title: "翻譯未完成", detail: "目前離線，未送出翻譯。") }
                 return
             }
             let translationStarted = DispatchTime.now().uptimeNanoseconds
@@ -1025,14 +1025,14 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
                 guard !cancellation.isCancelled else { return }
                 let reason = (error as? CloudError)?.errorDescription ?? "翻譯失敗，請稍後再試。"
-                updateUI(for: job) { self.notices.showFailure(title: "翻譯未完成", detail: reason) }
+                updateUI(for: job) { self.panel.hide(); self.notices.showFailure(title: "翻譯未完成", detail: reason) }
             }
         }
     }
 
     private func offerOnce(_ text: String, outcome: String, job: ProcessingJob, timing: DictationTiming) {
         guard let delivered = try? OutputPolicy.forDelivery(text), !delivered.isEmpty else {
-            updateUI(for: job) { self.notices.showFailure(title: "文字未輸出", detail: "繁體中文轉換失敗，本次沒有輸出文字。") }
+            updateUI(for: job) { self.panel.hide(); self.notices.showFailure(title: "文字未輸出", detail: "繁體中文轉換失敗，本次沒有輸出文字。") }
             return
         }
         var ready = timing

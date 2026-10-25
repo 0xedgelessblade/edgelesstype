@@ -37,6 +37,15 @@ final class GeminiTranscriptionTests: XCTestCase {
         try store.save(enabled(.geminiTranscribe)); XCTAssertEqual(try store.load(), enabled(.geminiTranscribe))
     }
 
+    func testAudioRequestsGiveUpOnStalledRepliesInsteadOfSpinning() throws {
+        XCTAssertEqual(AudioUploadPolicy.responseTimeout(audioBytes: 44 + 16 * 32_000), 19)
+        XCTAssertEqual(AudioUploadPolicy.responseTimeout(audioBytes: 44 + 3_600 * 32_000), 180)
+        for backend in [TranscriptionBackend.geminiTranscribe, .geminiDirect] {
+            let request = try GeminiAudioWire.request(audio: fixtureAudio, backend: backend, preferences: enabled(backend), key: "fixture")
+            XCTAssertTrue(request.timeoutInterval <= 16)
+        }
+    }
+
     func testTranscribeRequestUsesInteractionsEndpointSmartModeAndVocabulary() throws {
         let request = try GeminiAudioWire.request(audio: fixtureAudio, backend: .geminiTranscribe, preferences: enabled(.geminiTranscribe), key: "fixture-key",
                                                   terms: [" 權限 ", "", "權限", "Hermes"], context: "CONTEXT_FIXTURE_ONLY")

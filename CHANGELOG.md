@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-25 — No stale spinner after a failed recognition
+
+- Hide the recognition panel whenever a failure card is shown (speech, translation and Traditional Chinese conversion). Previously the panel kept spinning and its elapsed-seconds counter kept rising after the job had already failed.
+- Cloud audio requests (OpenAI and Gemini) now give up on a silent reply after 15 seconds plus a quarter of the recording length, at most 180 seconds, instead of always waiting 180 seconds.
+- A cloud recognition failure still pastes nothing and does not fall back to local Whisper.
+
 ## 2026-10-24 — Google Gemini speech backends
 
 - Add two opt-in Google speech backends beside local Whisper and OpenAI: Gemini Transcribe (`gemini-3.5-transcribe`, smart mode, dictionary words as custom vocabulary) and Gemini one-pass (`gemini-3.8-flash` returns corrected text from the audio in a single request; no separate correction request follows, timing outcome `merged`).
