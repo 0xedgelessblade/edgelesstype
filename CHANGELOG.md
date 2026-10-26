@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-26 — Resend and retry failed cloud recognition
+
+- Resend the same recording once, automatically, when cloud recognition fails with no or incomplete text, an unavailable provider, a timeout or a network error. Key, quota and request errors are not resent.
+- If the resend also fails, the failure card offers「重試」. The recording stays in memory only while the card is open and is released when it closes; a retry while another recording or job is running is refused and the card stays.
+- Record each failed cloud recognition attempt in `Config/transcription-failures.json` (latest 20) with reply metadata only (HTTP status, finish/block reason, part and token counts), never audio or text.
+
 ## 2026-10-25 — No stale spinner after a failed recognition
 
 - Hide the recognition panel whenever a failure card is shown (speech, translation and Traditional Chinese conversion). Previously the panel kept spinning and its elapsed-seconds counter kept rising after the job had already failed.

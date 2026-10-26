@@ -262,6 +262,42 @@ public enum GeminiAudioWire {
               value.range(of: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$", options: .regularExpression) != nil else { return nil }
         return value
     }
+
+    /// Response metadata only, never text: why a reply carried no usable transcript. Values are short enum-like tokens.
+    public static func failureEvidence(_ data: Data, status: Int) -> [String: String] {
+        var evidence = ["httpStatus": String(status)]
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            evidence["body"] = data.isEmpty ? "empty" : "notJSON"
+            return evidence
+        }
+        if let error = root["error"] as? [String: Any] { evidence["errorStatus"] = error["status"] as? String ?? "present" }
+        if let reason = (root["promptFeedback"] as? [String: Any])?["blockReason"] as? String { evidence["blockReason"] = reason }
+        if let state = root["status"] as? String { evidence["interactionStatus"] = state }
+        if let candidates = root["candidates"] as? [[String: Any]] {
+            evidence["candidates"] = String(candidates.count)
+            if let first = candidates.first {
+                if let reason = first["finishReason"] as? String { evidence["finishReason"] = reason }
+                let parts = (first["content"] as? [String: Any])?["parts"] as? [[String: Any]]
+                evidence["parts"] = parts.map { String($0.count) } ?? "missing"
+            }
+        } else if evidence["interactionStatus"] == nil {
+            evidence["candidates"] = "missing"
+        }
+        if let usage = root["usageMetadata"] as? [String: Any] {
+            for key in ["promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount"] {
+                if let count = usage[key] as? Int { evidence[key] = String(count) }
+            }
+        }
+        return evidence.mapValues { $0.range(of: "^[A-Za-z0-9_]{1,40}$", options: .regularExpression) != nil ? $0 : "other" }
+    }
+}
+
+/// Failures that are usually transient get one automatic resend of the same audio; account and request problems would fail again.
+public enum CloudAudioRetry {
+    public static func shouldResend(_ error: Error) -> Bool {
+        guard let error = error as? CloudError else { return false }
+        return [.invalidResponse, .incomplete, .unavailable, .timeout, .network].contains(error)
+    }
 }
 
 /// Explicit opt-in audio upload; no logging, persistent cache or redirects.
@@ -299,13 +335,19 @@ public final class CloudAudioClient: NSObject, URLSessionTaskDelegate {
     }
     public func transcribeGemini(audio: Data, backend: TranscriptionBackend, preferences: TranscriptionPreferences, key: String, terms: [String] = [],
                                  onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil,
-                                 onModel: ((String?) -> Void)? = nil, context: String? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
+                                 onModel: ((String?) -> Void)? = nil, onFailureEvidence: (([String: String]) -> Void)? = nil,
+                                 context: String? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
         try cancellation?.check()
         let request = try GeminiAudioWire.request(audio: audio, backend: backend, preferences: preferences, key: key, terms: terms, context: context)
         return try upload(request, onProgress: onProgress, onTimings: onTimings, cancellation: cancellation) { data, status in
-            let text = try GeminiAudioWire.parse(data, status: status, backend: backend)
-            onModel?(GeminiAudioWire.reportedModel(data))
-            return text
+            do {
+                let text = try GeminiAudioWire.parse(data, status: status, backend: backend)
+                onModel?(GeminiAudioWire.reportedModel(data))
+                return text
+            } catch {
+                onFailureEvidence?(GeminiAudioWire.failureEvidence(data, status: status))
+                throw error
+            }
         }
     }
     private func upload(_ original: URLRequest, onProgress: ((Double) -> Void)?, onTimings: ((TranscriptionTransferTimings) -> Void)?,

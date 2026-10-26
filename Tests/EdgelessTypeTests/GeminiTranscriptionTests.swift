@@ -37,6 +37,27 @@ final class GeminiTranscriptionTests: XCTestCase {
         try store.save(enabled(.geminiTranscribe)); XCTAssertEqual(try store.load(), enabled(.geminiTranscribe))
     }
 
+    func testFailureEvidenceKeepsReplyMetadataButNeverText() throws {
+        let empty = Data(#"{"candidates":[{"content":{"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":812,"thoughtsTokenCount":40}}"#.utf8)
+        XCTAssertThrowsError(try GeminiAudioWire.parse(empty, status: 200, backend: .geminiDirect))
+        XCTAssertEqual(GeminiAudioWire.failureEvidence(empty, status: 200),
+                       ["httpStatus": "200", "candidates": "1", "finishReason": "STOP", "parts": "missing",
+                        "promptTokenCount": "812", "thoughtsTokenCount": "40"])
+        let blocked = Data(#"{"promptFeedback":{"blockReason":"SAFETY"}}"#.utf8)
+        XCTAssertEqual(GeminiAudioWire.failureEvidence(blocked, status: 200), ["httpStatus": "200", "blockReason": "SAFETY", "candidates": "missing"])
+        let leaking = Data(#"{"candidates":[{"content":{"parts":[{"text":"SECRET_SPEECH"}]},"finishReason":"秘密 SECRET_SPEECH"}]}"#.utf8)
+        let evidence = GeminiAudioWire.failureEvidence(leaking, status: 200)
+        XCTAssertEqual(evidence["finishReason"], "other")
+        XCTAssertFalse(evidence.values.contains { $0.contains("SECRET") })
+        XCTAssertEqual(GeminiAudioWire.failureEvidence(Data("<html>".utf8), status: 502), ["httpStatus": "502", "body": "notJSON"])
+    }
+
+    func testOnlyTransientCloudFailuresAreResentAutomatically() {
+        for error in [CloudError.invalidResponse, .incomplete, .unavailable, .timeout, .network] { XCTAssertTrue(CloudAudioRetry.shouldResend(error)) }
+        for error in [CloudError.missingKey, .invalidKey, .invalidRequest, .authentication, .quota, .offline] { XCTAssertFalse(CloudAudioRetry.shouldResend(error)) }
+        XCTAssertFalse(CloudAudioRetry.shouldResend(TranscriptionError.audioTooLarge))
+    }
+
     func testAudioRequestsGiveUpOnStalledRepliesInsteadOfSpinning() throws {
         XCTAssertEqual(AudioUploadPolicy.responseTimeout(audioBytes: 44 + 16 * 32_000), 19)
         XCTAssertEqual(AudioUploadPolicy.responseTimeout(audioBytes: 44 + 3_600 * 32_000), 180)

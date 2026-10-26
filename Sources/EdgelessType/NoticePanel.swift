@@ -46,6 +46,7 @@ final class NoticePanel {
     private var hovered = false
     private var current: CorrectionNotice?
     private var escapeMonitor: Any?
+    private var failureRetry: (() -> Bool)?
 
     init() {
         panel.level = .floating
@@ -92,11 +93,13 @@ final class NoticePanel {
                 showsCopy: false, lifetime: 4, capsule: true)
     }
 
-    func showFailure(title heading: String, detail message: String) {
+    /// `retry` returns false when it cannot start now; the card then stays open with the kept recording.
+    func showFailure(title heading: String, detail message: String, retry: (() -> Bool)? = nil) {
         current = nil
         expanded = true
         present(symbol: "xmark.circle.fill", tint: .systemRed, heading: heading, message: message,
-                actionTitle: nil, showsCopy: false, lifetime: 8, capsule: false)
+                actionTitle: retry == nil ? nil : "重試", showsCopy: false, lifetime: 8, capsule: false)
+        failureRetry = retry
     }
 
     func showCopied() {
@@ -107,6 +110,7 @@ final class NoticePanel {
     }
 
     func hide() {
+        failureRetry = nil
         dismissTimer?.invalidate()
         dismissTimer = nil
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor); self.escapeMonitor = nil }
@@ -116,6 +120,7 @@ final class NoticePanel {
 
     private func present(symbol: String, tint: NSColor, heading: String, message: String,
                          actionTitle: String?, showsCopy: Bool, lifetime: TimeInterval, capsule: Bool) {
+        failureRetry = nil
         dismissTimer?.invalidate()
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: heading)
         icon.contentTintColor = tint
@@ -241,6 +246,10 @@ final class NoticePanel {
     }
 
     @objc private func performAction() {
+        if let retry = failureRetry {
+            if retry() { hide() }
+            return
+        }
         if current?.opensSettings == true { onOpenSettings?() }
         else { onRetry?() }
     }

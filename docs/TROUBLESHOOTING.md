@@ -232,3 +232,9 @@ Correction and translation reuse ephemeral sessions. When translation mode and c
 **修正：** 原目標仍在前景、App bundle 內含 `Contents/Frameworks/Electron Framework.framework`，且找不到輸入框時，請求一次 `AXManualAccessibility` 與 `AXEnhancedUserInterface`，再限次重新偵測。不以猜測的 bundle ID 判斷；不對 Electron 啟用盲目貼上；仍須辨認真正的編輯欄位並核對焦點才送出一次 Cmd+V。偵測失敗保留手動貼上。
 
 **證據：** `Scripts/test-paste-flow.py` 新增 Electron 延遲恢復、無法讀取、已就緒與背景程序四種記憶體 OS 情境。實際 Electron App（例如 Claude 桌面版）的自動貼入仍須在使用者環境確認。
+
+### Cloud recognition returns no text
+
+Gemini one-pass recognition sometimes answers HTTP 200 without any usable text, which surfaces as「服務商的回覆格式不符合預期」. Fixture and synthetic-speech runs could not reproduce it, so the cause is still unknown.
+
+The app now resends the same recording once for transient failures (no or incomplete text, provider unavailable, timeout, network). If that also fails, the failure card offers「重試」; the recording stays in memory only until the card is closed. Each failed attempt is appended to `Config/transcription-failures.json` (latest 20): timestamp, backend, error code, attempt number and reply metadata such as HTTP status, `finishReason`, `blockReason`, part count and token counts. It never stores audio, transcript, model text, dictionary or key, and must remain excluded from Git and exports.

@@ -172,13 +172,14 @@ struct Transcriber {
     var transcription = TranscriptionPreferences()
     var recordingContext: String?
 
-    func transcribe(url: URL, onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
+    func transcribe(url: URL, onProgress: ((Double) -> Void)? = nil, onTimings: ((TranscriptionTransferTimings) -> Void)? = nil,
+                    onFailureEvidence: (([String: String]) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
         try cancellation?.check()
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
         return try TranscriptionRouter.run(transcription,
             local: { try localTranscribe(url: url, cancellation: cancellation) },
             cloud: { try CloudTranscriptionService.transcribe(url: url, preferences: transcription, terms: vocabulary?.entries.map(\.word) ?? config.terms,
-                onProgress: onProgress, onTimings: onTimings, context: recordingContext, cancellation: cancellation) })
+                onProgress: onProgress, onTimings: onTimings, onFailureEvidence: onFailureEvidence, context: recordingContext, cancellation: cancellation) })
     }
 
     private func localTranscribe(url: URL, cancellation: ProcessingCancellation?) throws -> String {
@@ -914,18 +915,37 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
         guard !cancellation.isCancelled else { return }
-        let transcript: String
-        do {
-            transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription, recordingContext: job.context).transcribe(url: url,
-                onProgress: { fraction in
-                    self.updateUI(for: job) { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
-                }, onTimings: { timing.audioTransfer = $0 }, cancellation: cancellation))
-        } catch {
-            guard !cancellation.isCancelled else { return }
-            let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
-                ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
-            updateUI(for: job) { self.panel.hide(); self.notices.showFailure(title: "語音辨識未完成", detail: reason) }
-            return
+        var transcript = ""
+        var attempt = 0
+        while true {
+            attempt += 1
+            var evidence: [String: String]?
+            do {
+                transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription, recordingContext: job.context).transcribe(url: url,
+                    onProgress: { fraction in
+                        self.updateUI(for: job) { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
+                    }, onTimings: { timing.audioTransfer = $0 }, onFailureEvidence: { evidence = $0 }, cancellation: cancellation))
+                break
+            } catch {
+                guard !cancellation.isCancelled else { return }
+                let backend = recordingTranscription.backend
+                if backend.isCloud { TranscriptionFailureLog.save(backend: backend, error: error, attempt: attempt, evidence: evidence) }
+                // The same recording goes out once more before the user sees a failure.
+                if attempt == 1, backend.isCloud, CloudAudioRetry.shouldResend(error) {
+                    updateUI(for: job) { self.panel.showWorking(.uploading, progress: 0) }
+                    continue
+                }
+                let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
+                    ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
+                // Cloud failures keep the recording in memory only while the card is open, so it can be resent without speaking again.
+                let audio = backend.isCloud && error is CloudError ? try? Data(contentsOf: url) : nil
+                updateUI(for: job) {
+                    self.panel.hide()
+                    self.notices.showFailure(title: "語音辨識未完成", detail: reason,
+                                             retry: audio.map { audio in { [weak self] in self?.retryRecognition(audio, mode: mode, job: job) ?? false } })
+                }
+                return
+            }
         }
         guard !cancellation.isCancelled else { return }
         timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
@@ -1085,6 +1105,26 @@ final class AppController: NSObject, NSApplicationDelegate {
         let board = NSPasteboard.general
         board.clearContents()
         board.setString(text, forType: .string)
+    }
+
+    /// Resends a kept recording through the normal pipeline; refuses while another recording or job is running.
+    private func retryRecognition(_ audio: Data, mode: Session, job: ProcessingJob) -> Bool {
+        guard !busy, session == .idle else { NSSound.beep(); return false }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-\(UUID().uuidString).wav")
+        guard FileManager.default.createFile(atPath: url.path, contents: audio, attributes: [.posixPermissions: 0o600]) else { return false }
+        let retryJob = ProcessingJob(config: job.config, vocabulary: job.vocabulary, transcription: job.transcription,
+                                     targetPID: job.targetPID, context: job.context)
+        let timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds,
+            mode: mode == .translation ? "translation" : "dictation",
+            model: job.transcription.backend.cloudModel ?? (job.config.residentSpeech?.displayName ?? "Small CPU"))
+        busy = true
+        currentProcessing = retryJob
+        status.button?.title = mode == .translation ? "譯中" : "轉寫"
+        panel.showWorking(.uploading)
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.process(url: url, mode: mode, timing: timing, job: retryJob)
+        }
+        return true
     }
 
     private func retryLastCorrection() {

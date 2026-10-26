@@ -4,7 +4,8 @@ import EdgelessTypeCore
 /// Explicit opt-in cloud recognition. Exactly one backend runs; nothing falls back to another provider.
 enum CloudTranscriptionService {
     static func transcribe(url: URL, preferences: TranscriptionPreferences, terms: [String] = [], onProgress: ((Double) -> Void)? = nil,
-                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, context: String? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
+                           onTimings: ((TranscriptionTransferTimings) -> Void)? = nil, onFailureEvidence: (([String: String]) -> Void)? = nil,
+                           context: String? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
         try cancellation?.check()
         let backend = try preferences.validated().backend
         guard backend.isCloud, !CloudAccess.offlineProbe, let provider = backend.cloudProvider else { throw TranscriptionError.cloudNotEnabled }
@@ -20,7 +21,7 @@ enum CloudTranscriptionService {
             return try CloudAudioClient.shared.transcribe(audio: audio, preferences: preferences, key: key, onProgress: onProgress, onTimings: onTimings, context: context, cancellation: cancellation)
         case .geminiTranscribe, .geminiDirect:
             return try CloudAudioClient.shared.transcribeGemini(audio: audio, backend: backend, preferences: preferences, key: key, terms: terms,
-                onProgress: onProgress, onTimings: onTimings, context: context, cancellation: cancellation)
+                onProgress: onProgress, onTimings: onTimings, onFailureEvidence: onFailureEvidence, context: context, cancellation: cancellation)
         case .localWhisper:
             throw TranscriptionError.cloudNotEnabled
         }

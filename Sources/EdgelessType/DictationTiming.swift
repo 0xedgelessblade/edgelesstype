@@ -34,3 +34,17 @@ struct DictationTiming: Codable {
 
     func elapsed() -> Double { Double(DispatchTime.now().uptimeNanoseconds - startedUptime)/1e9 }
 }
+
+/// Why cloud recognition failed: error kind and reply metadata only, no recording or text. Keeps the latest 20 entries.
+enum TranscriptionFailureLog {
+    static func save(backend: TranscriptionBackend, error: Error, attempt: Int, evidence: [String: String]?) {
+        var entry: [String: Any] = ["recordedAt": ISO8601DateFormatter().string(from: Date()), "backend": backend.rawValue,
+                                    "attempt": attempt, "error": (error as? CloudError)?.rawValue ?? "\(type(of: error)).\(error)"]
+        if let evidence { entry["evidence"] = evidence }
+        let url = AppPaths.projectRoot().appendingPathComponent("Config/transcription-failures.json")
+        let previous = (try? Data(contentsOf: url)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        guard let data = try? JSONSerialization.data(withJSONObject: Array((previous + [entry]).suffix(20)), options: [.prettyPrinted, .sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+}

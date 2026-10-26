@@ -30,6 +30,7 @@ __pycache__/
 .env.*
 
 /Config/last-correction-failure.json
+/Config/transcription-failures.json
 
 /Config/transcription.json
 
