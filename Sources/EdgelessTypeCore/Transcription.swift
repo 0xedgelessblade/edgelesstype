@@ -370,6 +370,8 @@ public final class CloudAudioClient: NSObject, URLSessionTaskDelegate {
         let registration = cancellation?.register { task.cancel(); gate.signal() }
         defer { cancellation?.unregister(registration) }
         try cancellation?.check()
+        // A switch to local that landed before registration must not start another upload.
+        if cancellation?.didSkipCloud == true { throw ProcessingError.skippedCloud }
         task.resume()
         guard gate.wait(timeout: .now() + 601) == .success else { task.cancel(); throw CloudError.timeout }
         try cancellation?.check()

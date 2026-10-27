@@ -372,6 +372,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         panel.onConfirm = { [weak self] in self?.finish() }
         panel.onSkipCloud = { [weak self] in self?.currentProcessing?.cancellation.skipCloud() }
+        panel.onOfferLocal = { [weak self] in
+            guard let config = self?.currentProcessing?.config, config.residentSpeech != nil else { return }
+            DispatchQueue.global(qos: .userInitiated).async { try? ResidentSpeechEngine.shared.warmUp(config: config) }
+        }
         panel.onDegraded = { [weak self] outcome in
             guard let self, let notice = OutputPolicy.correctionNotice(outcome: outcome) else { return }
             self.correctionDegraded = true
@@ -835,6 +839,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         timing.recordingStopSeconds = timing.elapsed()
         let startedTiming = timing
         status.button?.title = mode == .translation ? "譯中" : "轉寫"
+        panel.cloudRecognition = recordingTranscription.backend.isCloud
         panel.showWorking(recordingTranscription.backend.isCloud ? .uploading : .recognizing)
         launchProcessing(url: url, mode: mode, timing: startedTiming)
     }
@@ -917,6 +922,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard !cancellation.isCancelled else { return }
         var transcript = ""
         var attempt = 0
+        var recognizedLocally = false
         while true {
             attempt += 1
             var evidence: [String: String]?
@@ -929,6 +935,21 @@ final class AppController: NSObject, NSApplicationDelegate {
             } catch {
                 guard !cancellation.isCancelled else { return }
                 let backend = recordingTranscription.backend
+                // The user chose local Whisper while the cloud was slow: same recording, no further cloud step.
+                if backend.isCloud, cancellation.didSkipCloud, !recognizedLocally {
+                    recognizedLocally = true
+                    do {
+                        updateUI(for: job) { self.panel.cloudRecognition = false; self.panel.showWorking(.recognizing) }
+                        transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary,
+                            recordingContext: job.context).transcribe(url: url, cancellation: cancellation))
+                        break
+                    } catch {
+                        guard !cancellation.isCancelled else { return }
+                        let reason = (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "本機辨識失敗，沒有貼上。"
+                        updateUI(for: job) { self.panel.hide(); self.notices.showFailure(title: "本機辨識未完成", detail: reason) }
+                        return
+                    }
+                }
                 if backend.isCloud { TranscriptionFailureLog.save(backend: backend, error: error, attempt: attempt, evidence: evidence) }
                 // The same recording goes out once more before the user sees a failure.
                 if attempt == 1, backend.isCloud, CloudAudioRetry.shouldResend(error) {
@@ -955,7 +976,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         let correctionStarted = DispatchTime.now().uptimeNanoseconds
         let corrected: String
-        if recordingTranscription.backend.mergesCorrection {
+        if recognizedLocally {
+            // Choosing local means no cloud correction either; paste the local text once.
+            timing.model = config.residentSpeech?.displayName ?? "Small CPU"
+            timing.correctionOutcome = "skipped"
+            corrected = transcript
+        } else if recordingTranscription.backend.mergesCorrection {
             // The audio request already returned corrected text; no second cloud round trip.
             timing.correctionProvider = recordingTranscription.backend.cloudProvider?.rawValue
             timing.correctionOutcome = "merged"
@@ -1120,6 +1146,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         busy = true
         currentProcessing = retryJob
         status.button?.title = mode == .translation ? "譯中" : "轉寫"
+        panel.cloudRecognition = job.transcription.backend.isCloud
         panel.showWorking(.uploading)
         DispatchQueue.global(qos: .userInitiated).async {
             self.process(url: url, mode: mode, timing: timing, job: retryJob)

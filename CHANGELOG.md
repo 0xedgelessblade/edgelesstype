@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-27 — Switch a slow cloud recognition to local Whisper
+
+- When cloud recognition (upload, reply and the automatic resend) takes 5 seconds or more, the recognition panel offers「改用本機 · Fn」, the same pattern as「先貼原文 · Fn」during correction. Clicking it or tapping Fn once cancels the cloud request and recognizes the same recording with local Whisper; no cloud correction follows.
+- The local engine starts loading in the background when the button appears, so pressing it does not wait for a cold model load from scratch.
+- No new audio upload starts after the switch, including a resend that was about to begin.
+
 ## 2026-10-26 — Resend and retry failed cloud recognition
 
 - Resend the same recording once, automatically, when cloud recognition fails with no or incomplete text, an unavailable provider, a timeout or a network error. Key, quota and request errors are not resent.

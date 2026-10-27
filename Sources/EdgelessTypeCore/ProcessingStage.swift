@@ -19,4 +19,8 @@ public enum ProcessingPlan {
     public static func shouldOfferRoughPaste(stage: ProcessingStage, elapsed: TimeInterval) -> Bool {
         (stage == .correcting || stage == .translating) && elapsed >= 3
     }
+    /// A slow cloud recognition can be abandoned for local Whisper on the same recording.
+    public static func shouldOfferLocalRecognition(stage: ProcessingStage, elapsed: TimeInterval) -> Bool {
+        (stage == .uploading || stage == .recognizing) && elapsed >= 5
+    }
 }

@@ -16,6 +16,10 @@ final class RecordChrome {
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
     var onSkipCloud: (() -> Void)?
+    /// Set per job: cloud recognition may offer local Whisper after a slow wait.
+    var cloudRecognition = false
+    /// Fires once when the local button appears, so the engine can load before it is pressed.
+    var onOfferLocal: (() -> Void)?
     var onDegraded: ((String) -> Void)?
     var onFailure: ((String, String) -> Void)?
 
@@ -60,8 +64,15 @@ final class RecordChrome {
         pendingWarning = nil
         pendingOutcome = "not_requested"
         let previous: ProcessingStage? = { if case .working(let current) = pill.mode { return current }; return nil }()
+        let recognition: (ProcessingStage?) -> Bool = { $0 == .uploading || $0 == .recognizing }
         if stage == .correcting || stage == .translating {
             if previous != stage {
+                pill.cloudStepStartedAt = Date()
+                pill.skipCloud.isHidden = true
+            }
+        } else if cloudRecognition && recognition(stage) {
+            // Upload, recognition and the automatic resend share one wait.
+            if !recognition(previous) {
                 pill.cloudStepStartedAt = Date()
                 pill.skipCloud.isHidden = true
             }
@@ -76,7 +87,7 @@ final class RecordChrome {
         pill.setAccessibilityLabel(stage.title + "，錄音已停止")
         panel.ignoresMouseEvents = false
         startWave()
-        place(width: 280, height: 64)
+        place(width: pill.skipCloud.isHidden ? 280 : 360, height: 64)
         panel.orderFrontRegardless()
     }
 
@@ -150,11 +161,14 @@ final class RecordChrome {
             self.phase += 0.55
             self.pill.phase = self.phase
             if case .working(let stage) = self.pill.mode,
-               let started = self.pill.cloudStepStartedAt,
-               ProcessingPlan.shouldOfferRoughPaste(stage: stage, elapsed: Date().timeIntervalSince(started)),
-               self.pill.skipCloud.isHidden {
-                self.pill.skipCloud.isHidden = false
-                self.place(width: 360, height: 64)
+               let started = self.pill.cloudStepStartedAt, self.pill.skipCloud.isHidden {
+                let elapsed = Date().timeIntervalSince(started)
+                let local = ProcessingPlan.shouldOfferLocalRecognition(stage: stage, elapsed: elapsed)
+                if local || ProcessingPlan.shouldOfferRoughPaste(stage: stage, elapsed: elapsed) {
+                    self.pill.offer(local ? "改用本機" : "先貼原文")
+                    self.place(width: 360, height: 64)
+                    if local { self.onOfferLocal?() }
+                }
             }
             self.pill.needsDisplay = true
         }
@@ -218,6 +232,11 @@ final class PillView: NSView {
 
     @objc private func cancelWork() { onCancel?() }
     @objc private func skipWork() { onSkipCloud?() }
+    func offer(_ action: String) {
+        skipCloud.title = action + " · Fn"
+        skipCloud.setAccessibilityLabel(action + "，或再按一次 Fn")
+        skipCloud.isHidden = false
+    }
     var onSkipCloud: (() -> Void)?
 
     var phase = 0.0

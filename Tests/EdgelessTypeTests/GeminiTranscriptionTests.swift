@@ -182,6 +182,10 @@ final class GeminiTranscriptionTests: XCTestCase {
         GeminiFixtureProtocol.transcribe = true
         XCTAssertEqual(try client.transcribeGemini(audio: fixtureAudio, backend: .geminiTranscribe, preferences: enabled(.geminiTranscribe), key: "fixture"), "固定轉寫文字。")
         GeminiFixtureProtocol.transcribe = false
+        // After a switch to local, no further audio upload starts.
+        let switched = ProcessingCancellation(); switched.skipCloud()
+        XCTAssertThrowsError(try client.transcribeGemini(audio: fixtureAudio, backend: .geminiDirect, preferences: enabled(.geminiDirect), key: "fixture", cancellation: switched))
+        XCTAssertEqual(GeminiFixtureProtocol.calls, 2)
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let request = URLRequest(url: URL(string: "https://example.com/redirect")!)
