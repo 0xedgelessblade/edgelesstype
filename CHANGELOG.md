@@ -1,167 +1,257 @@
-# Changelog
+# 更新紀錄 / Changelog
 
-## 2026-10-27 — Switch a slow cloud recognition to local Whisper
+edgelesstype 是 Apple silicon Mac 的開源語音輸入工具：預設用本機 Whisper 辨識，也可以選擇 OpenAI 或 Google Gemini 雲端辨識，輸出繁體中文。
 
-- When cloud recognition (upload, reply and the automatic resend) takes 5 seconds or more, the recognition panel offers「改用本機 · Fn」, the same pattern as「先貼原文 · Fn」during correction. Clicking it or tapping Fn once cancels the cloud request and recognizes the same recording with local Whisper; no cloud correction follows.
-- The local engine starts loading in the background when the button appears, so pressing it does not wait for a cold model load from scratch.
-- No new audio upload starts after the switch, including a resend that was about to begin.
+每一版從使用者遇到的問題寫起，接著是這次處理的難題、完成狀態，最後附英文摘要。日期代表原始碼更新，不代表另外打包的安裝檔。
 
-## 2026-10-26 — Resend and retry failed cloud recognition
+edgelesstype is an open-source voice dictation app for Apple silicon Macs, with local Whisper by default and optional OpenAI or Google Gemini cloud recognition. Each entry starts with the problem a user ran into, then the changes, what has and has not been verified, and an English summary. Dates mark source updates, not separately packaged releases.
 
-- Resend the same recording once, automatically, when cloud recognition fails with no or incomplete text, an unavailable provider, a timeout or a network error. Key, quota and request errors are not resent.
-- If the resend also fails, the failure card offers「重試」. The recording stays in memory only while the card is open and is released when it closes; a retry while another recording or job is running is refused and the card stays.
-- Record each failed cloud recognition attempt in `Config/transcription-failures.json` (latest 20) with reply metadata only (HTTP status, finish/block reason, part and token counts), never audio or text.
+## 2026-10-27 — 雲端慢的時候，讓你自己決定要不要等
 
-## 2026-10-25 — No stale spinner after a failed recognition
+講完一段話，雲端有時幾秒就回來，有時要等很久。等的人不知道還要多久，也沒有辦法改變什麼。這次我們不替你猜，等滿 5 秒就把選擇交給你：辨識框右側浮出「改用本機 · Fn」，點它或再按一次 Fn，雲端立刻取消，改用電腦上的 Whisper 辨識同一段錄音。
 
-- Hide the recognition panel whenever a failure card is shown (speech, translation and Traditional Chinese conversion). Previously the panel kept spinning and its elapsed-seconds counter kept rising after the job had already failed.
-- Cloud audio requests (OpenAI and Gemini) now give up on a silent reply after 15 seconds plus a quarter of the recording length, at most 180 seconds, instead of always waiting 180 seconds.
-- A cloud recognition failure still pastes nothing and does not fall back to local Whisper.
+### 這次處理的難題
 
-## 2026-10-24 — Google Gemini speech backends
+- **雲端偶爾就是會慢：** 實測同時送出 10 次一分鐘的語音，有 1 次將近 50 秒才回來。提高或降低等待上限都只是替使用者猜，所以改成讓人自己選。
+- **不要多學一個新東西：** 按鈕位置、樣子和「再按一次 Fn」的手勢，都跟校正時的「先貼原文 · Fn」相同。
+- **按下去不能再等模型載入：** 雲端模式平常不載入本機引擎。按鈕出現的那一刻，就在背景先載入，按下時通常不必從頭等。
+- **不能貼兩次：** 改用本機後，雲端請求立即取消；就算自動重送剛好要開始，也不會再送出新的上傳。
+- **說清楚代價：** 本機結果不再經過雲端校正，標點和用字可能比雲端粗糙；但那段話會留下來。
 
-- Add two opt-in Google speech backends beside local Whisper and OpenAI: Gemini Transcribe (`gemini-3.5-transcribe`, smart mode, dictionary words as custom vocabulary) and Gemini one-pass (`gemini-3.8-flash` returns corrected text from the audio in a single request; no separate correction request follows, timing outcome `merged`).
-- Both reuse the encrypted Google key record and require the same explicit audio consent as OpenAI; the speech settings, consent text and key button now follow the chosen provider. Inline audio is capped so requests stay under Google's 20 MB limit.
-- Fix Google text correction: `gemini-3.8-flash` rejects thinking level `MINIMAL` with HTTP 400, so requests now send `low`.
-- Fixture tests cover request shape, consent, size limits, sanitized failures and mock transport; real-account quality and latency still need the user's own measurement.
+### 完成狀態
 
-## 2026-10-21 — Correction notices and transfer timing
+132 項自動測試通過，包含按鈕出現的時機，以及改用本機後不再上傳。私人版已更新為這一版。雲端變慢無法刻意重現，這顆按鈕還沒在真實畫面上看過。
 
-- Show a short top notice when corrected text could not be applied and the original was pasted. Real failures that paste nothing use a separate card. Neither covers the input.
-- After three seconds of correction or translation, offer to paste the original once without cancelling the rest of the job. Offline skips the cloud request before it is sent.
-- Record numeric correction connection, upload and response-wait timings. A keyless host warmup may run when correction is enabled; it sends no credential or text. Timeout remains unlimited.
-- OpenAI correction reasoning is unchanged. A live quality comparison still needs explicit permission.
+### Choose local recognition when the cloud is slow
 
-## 2026-10-16 — Chrome editable-focus recovery
+After 5 seconds of cloud recognition, including upload, reply and the automatic resend, the recognition panel shows「改用本機 · Fn」. Clicking it or tapping Fn once cancels the cloud request and recognizes the same recording with local Whisper. It follows the existing「先貼原文 · Fn」pattern. The local engine starts loading when the button appears, and no new upload starts after the switch. Local text skips cloud correction, so punctuation may be rougher. 132 automated tests passed; the button has not yet been seen in a real slow session.
 
-- Request Chrome process-wide accessibility exposure once when the original foreground target lacks editable focus, then retry detection long enough to cover delayed activation.
-- Preserve editable-target verification, one-shot paste, cancellation and manual recovery; never fall back to blind browser-wide paste or submit a search.
-- Add simulated fast, delayed, unavailable, cancelled, manual and background-browser tests; native browser compatibility requires separate verification.
+## 2026-10-26 — 講了一大段，不該因為一次失敗就消失
 
-## 2026-10-15 — Sentence-level speech correction guidance
+使用 Gemini 一趟式辨識時，偶爾講完一大段話，換來的是「服務商的回覆格式不符合預期」。這代表 Google 回了訊息，但裡面沒有任何文字；而那段錄音在失敗的瞬間就被刪除，只能重講一次。
 
-- Share contextual homophone and word-boundary guidance between full-text correction and the legacy polish route; align correction-enabled translation. Preserve ambiguity, negation and speaker intent without hardcoded substitutions or additional model calls.
-- Record successful legacy polishing as corrected/unchanged rather than not_requested, using status only.
-- Offline checks verify request construction and unchanged-text acceptance, not model accuracy or the cause of historical speech errors. No private recordings, context or transcripts are collected for tests.
+### 這次處理的難題
 
-## 2026-10-14 — Installation and documentation paths
+- **找不到原因：** 用合成語音、照 App 相同的模型與設定送出 1 分鐘、3 分鐘、6 分鐘，再把 1 分鐘的音檔同時送 10 次，13 次全部正常回傳，沒有重現。App 為了隱私不保存回覆，所以事後也查不到。
+- **先止血，再找病因：** 遇到空白或不完整回覆、服務暫時無法使用、逾時或斷線時，在背景自動重送同一段錄音一次，使用者不必做任何事。金鑰、額度與請求格式錯誤再送也會失敗，所以不重送。
+- **錄音要留給使用者：** 重送也失敗時，紅色提示多一顆「重試」。錄音只放在記憶體，提示關閉就釋放，不寫成檔案。正在錄下一段時按重試，提示會保留，錄音不會遺失。
+- **下次要抓得到兇手：** 每次失敗都寫入本機 `Config/transcription-failures.json`，保留最近 20 筆。內容只有 HTTP 狀態、結束原因、阻擋原因與 token 數，不含錄音、文字、字典或金鑰；測試會確認回覆中的文字不會混進紀錄。
 
-- Add safe first-install preparation of a separate private runtime, with allowlisted artifacts, model checksum checks, refusal to overwrite existing installations and synthetic failure tests.
-- Align README, AI installation and signing instructions: prepare, sign, then grant permissions to the private app. Add bounded download timeouts and retry guidance.
-- Add a documentation home, user manual, English overview, FAQ and evidence-based AI reading checks; update architecture/privacy descriptions and canonical Markdown links in llms.txt.
+### 完成狀態
 
-## 2026-10-13 — Optional recording context and cancellation
+131 項自動測試通過。私人版已更新。真正的失敗原因仍未知，要等下一次失敗的紀錄；「重試」按鈕尚未在真實失敗中看過。
 
-- Add bounded nearby-text context with separate, default-off OpenAI context consent; keep captured text out of files, diagnostics and development fixtures.
-- Add a compact processing cancel control and per-job cancellation; ignore stale progress and paste callbacks.
-- Test consent gating, bounded context, stale-result rejection and native setting controls with synthetic data. Cross-app context availability and real accuracy gains remain environment-dependent.
+### Keep the recording when cloud recognition fails
 
-## 2026-10-13 — Unified module names and explicit private-data migration
+Gemini one-pass recognition sometimes returns a reply with no text, and the recording used to be deleted at once. Synthetic-speech runs did not reproduce it, so this release limits the loss first: transient failures are resent once automatically, and a final failure offers「重試」while the recording stays in memory until the card closes. Each failed attempt is logged locally with reply metadata only, never audio or text. 131 automated tests passed; the root cause is still unknown.
 
-- Rename Swift targets, imports, source/test paths and documentation to EdgelessType / EdgelessTypeCore / EdgelessTypeTests.
-- Move normal credential storage to v2 authenticated-encryption envelopes and new data filenames. Preserve provider records and key material through a tested offline one-time migration, with key-table backups separate from encrypted-data backups.
-- Preserve installed signing IDs, certificate identity and the existing speech-worker protocol. Keep legacy names only where required by these stable contracts or the explicit migration reader.
-- Add prepare/finalize/rollback tools and synthetic migration tests; no private data or signing keys are included.
+## 2026-10-25 — 轉圈不該說謊
 
+辨識失敗時，螢幕上方跳出紅色的「語音辨識未完成」，底下的「語音辨識中」卻還在轉，秒數繼續往上跳。畫面同時說了兩件相反的事，看起來像還在努力，其實早就結束了。
 
-## 2026-10-13 — Stable local updates, processing clarity and engineering guide
+### 這次處理的難題
 
-- Show distinct recording, upload, recognition, correction and translation states; processing uses a spinner, stage label and elapsed time instead of recording controls.
-- Reuse ephemeral HTTP sessions without caches, cookies or stored credentials; combine enabled text correction with translation in one request while preserving provider and model choices.
-- Record numeric upload/response-wait/connection timing when Foundation provides it; no recordings or text are logged. Real end-to-end speed remains environment-dependent.
+- **那個秒數不是錄音長度：** 它是從開始處理到現在的計時器。失敗後沒有關掉辨識框，計時就一直跑下去。
+- **同樣的漏洞不只一處：** 語音辨識、翻譯與繁體轉換失敗，都改成先關辨識框，再顯示失敗提示。
+- **沒有回應也不能一直等：** 以前雲端沒回應時固定等 180 秒。現在是 15 秒加上錄音長度的四分之一，上限 180 秒：16 秒的錄音最多等 19 秒，長錄音仍有足夠時間。OpenAI 與 Gemini 都適用。
 
-- Add a step-by-step personal signing guide and a metadata-only helper to select each user's own Keychain identity; no author certificate or private key is distributed.
-- Record user-confirmed Grok Bot automatic paste and preview dismissal.
+### 完成狀態
 
-- Require a stable certificate-backed identity for local updates, separate the local bundle ID from public/test builds, verify continuity and restore original signed files on failure.
+129 項自動測試通過，私人版已更新。辨識框關閉的畫面尚未在真實失敗中確認。
 
-- Remove trailing Chinese/English full stops from final dictation and translation previews and paste text; preserve internal punctuation.
+### No stale spinner after a failure
 
-- Add a narrow Grok Bot fallback for editors without readable accessibility focus; send paste once while the original process remains foreground. A live success was user-confirmed; broader version/field support remains unverified.
-- Support a distinct local app display name and a one-way updater from public source to a private runtime, preserving personal data and recording build provenance.
+The recognition panel now closes whenever a failure card appears, so its spinner and elapsed-seconds counter no longer keep running after a failed job. Cloud audio requests give up on a silent reply after 15 seconds plus a quarter of the recording length, at most 180 seconds. 129 automated tests passed.
 
-- Publish a de-identified [engineering guide](docs/ENGINEERING-LESSONS.md) with diagnosis steps, failed approaches, reproducible checks and explicit evidence limits. Correct outdated architecture statements about optional cloud audio.
+## 2026-10-24 — 多兩個 Google Gemini 語音辨識選項
 
-Notable changes to edgelesstype. Dates identify source updates; they do not imply a separately packaged binary release.
+除了本機 Whisper 和 OpenAI，現在也能用 Google Gemini 辨識語音。一種專心把聲音轉成文字，另一種一次就交回校正好的文字。兩種都要先同意上傳錄音。
 
-## 2026-10-11 — Selectable transcription and full-text correction
+### 這次處理的難題
 
-### Why this change
+- **兩種用法，各有取捨：** Gemini Transcribe（`gemini-3.5-transcribe`）用 smart 模式轉寫，並把字典詞當成自訂詞彙；辨識完照原設定校正。Gemini 一趟式（`gemini-3.8-flash`）直接從錄音交回校正後的文字，省掉第二次校正請求。
+- **同意與金鑰跟著服務商走：** 沿用加密保存的 Google 金鑰，跟 OpenAI 一樣需要明確同意上傳錄音。語音設定、同意文字與金鑰按鈕，會依選擇的服務商切換。
+- **錄音大小有上限：** 音訊直接放在請求裡，因此設定上限，讓每次請求都在 Google 的 20 MB 限制以內。
+- **順手修好 Google 文字校正：** `gemini-3.8-flash` 不接受推理等級 `MINIMAL`，會回 HTTP 400；改為送出 `low`。
 
-Speech recognition and text correction now have independent choices. Local Whisper remains the default, while an explicit OpenAI option supports workflows that prefer cloud transcription. This update does not claim that either route is universally faster or more accurate.
+### 完成狀態
 
-The previous correction path could reject an entire reply when a word substitution failed a local content rule. Correction now accepts the model's complete text directly, with successful transport, completion and non-empty output checks, followed by local Traditional Chinese conversion.
+固定案例測試涵蓋請求格式、同意規則、大小上限、錯誤訊息與模擬連線。真實帳號的品質與速度，仍需使用者自己量測。
 
-### Added
+### Two Google Gemini speech options
 
-- A speech-recognition selector in the app menu and dictionary window: **Whisper (local)** or **GPT Transcribe (OpenAI cloud)**.
-- Explicit audio-upload consent before enabling OpenAI transcription. The choice is captured at recording start and remains stable for that recording.
-- A dedicated OpenAI key-settings entry that reuses the encrypted OpenAI record without changing the text-correction provider.
-- A fixed HTTPS audio-transcription endpoint, generic upload filenames, WAV/file-size checks, redirect blocking and sanitized error messages. Cloud mode skips local Whisper warm-up and does not silently fall back to another backend.
+Gemini Transcribe (`gemini-3.5-transcribe`, smart mode, dictionary words as custom vocabulary) and Gemini one-pass (`gemini-3.8-flash`, corrected text from the audio in one request) join local Whisper and OpenAI. Both reuse the encrypted Google key and require explicit audio consent; inline audio stays under Google's 20 MB limit. Google text correction now sends thinking level `low`, because `gemini-3.8-flash` rejects `MINIMAL` with HTTP 400. Fixture tests cover requests, consent, limits, sanitized failures and mock transport; real-account quality and latency still need the user's own measurement.
 
-### Changed
+## 2026-10-21 — 校正沒套用時看得出來，等太久時可以先貼
 
-- Request full corrected text instead of a structured list of word substitutions.
-- Remove homophone/dictionary matching, edit-count and word-length limits, source-position matching, overlap checks and punctuation comparison from the normal correction path.
-- Preserve long-text segmentation and paste the combined result once. Do not run an additional polish pass after contextual correction.
-- Keep Traditional Chinese conversion before preview and paste, including fallback text. Failed, incomplete or empty replies retain the existing warning and recovery behavior.
-- Retain a separate local failure-status record containing only a fixed reason code, provider and timestamp; a later success no longer overwrites the latest failure record.
-- Update the UI and privacy documentation to distinguish optional audio upload from text-only correction. Runtime preferences and diagnostics remain excluded from Git and public exports.
+雲端校正失敗時，貼上的原文看起來跟成功一樣，使用者不會知道少了校正；校正慢的時候，也只能乾等。
 
-### Validation and boundaries
+### 這次處理的難題
 
-- 96 core tests passed locally, covering backend selection, consent gating, request/response formats, mocked network transport, full-text correction and Traditional Chinese conversion.
-- Paste-flow regression tests, app self-check and documentation/privacy checks passed locally. Native settings tests verified the local default, blocked cloud activation without consent, persisted choices and switching back to local Whisper.
-- No real API credentials or private recordings were used for cloud-transcription testing. Actual account/model access still depends on the user's OpenAI account.
-- Cloud transcription requires network access and API credit, sends the recording to OpenAI and has a 25 MB per-file limit. Model quality and unchanged meaning are not guaranteed by the basic reply checks. Hosted CI results are tracked separately in [GitHub Actions](https://github.com/0xedgelessblade/edgelesstype/actions).
+- **失敗要看得見，但不能擋住輸入：** 校正沒有套用、改貼原文時，螢幕上方出現簡短提示；真的什麼都沒貼上，則用另一張卡片。兩者都不蓋住輸入框。
+- **等超過 3 秒，可以先貼原文：** 校正或翻譯超過 3 秒，可以先貼一次原文，其餘工作不會被取消。離線時，在送出前就略過雲端請求。
+- **先知道慢在哪裡：** 記錄校正的連線、上傳與等待回覆秒數。開啟校正時，可能先對服務商主機預熱連線，不帶金鑰，也不帶文字。校正等待時間仍不設上限。
 
-### Acknowledgments / 特別感謝
+### 完成狀態
 
-Special thanks to [@plumy_river on X](https://x.com/plumy_river) / [@plumyriver0327 on Threads](https://www.threads.com/@plumyriver0327) for their development assistance and support for this update.
+OpenAI 校正的推理強度沒有更動。真實的品質比較會花費 API 額度，需要使用者明確同意後才會進行。
+
+### Visible correction failures and an early paste
+
+A short top notice appears when correction was not applied and the original was pasted; failures that paste nothing use a separate card, and neither covers the input. After 3 seconds of correction or translation, the original can be pasted once without cancelling the job. Offline skips the cloud request before it is sent. Correction timing is recorded, and a keyless host warmup may run. OpenAI reasoning is unchanged; a live quality comparison still needs explicit permission.
+
+## 2026-10-16 — Chrome 讀不到輸入框時，自己找回來
+
+在 Chrome 裡聽寫時，App 偶爾讀不到正在輸入的欄位，就無法確認文字要貼到哪裡。
+
+### 這次處理的難題
+
+- **向 Chrome 要一次輔助資訊：** 原本的前景視窗沒有可編輯焦點時，請 Chrome 開啟整個程式的輔助使用資訊一次，並持續重新偵測，涵蓋延遲啟用的情況。
+- **寧可不貼，也不亂貼：** 保留可編輯目標驗證、只貼一次、取消與手動補救；不會改成對整個瀏覽器盲貼，也不會送出搜尋。
+
+### 完成狀態
+
+模擬測試涵蓋快速、延遲、無法取得、取消、手動與背景瀏覽器等情境。實際 Chrome 相容性需要另外驗證。
+
+### Chrome editable-focus recovery
+
+When the foreground target lacks editable focus, the app asks Chrome once for process-wide accessibility and retries detection long enough to cover delayed activation. Verification, one-shot paste, cancellation and manual recovery stay in place; it never pastes blindly or submits a search. Simulated scenarios pass; native browser compatibility needs separate verification.
+
+## 2026-10-15 — 校正改以整句判斷同音字與斷詞
+
+語音辨識常把同音字或詞的邊界弄錯，校正要看整句話的意思，才知道該改成什麼。
+
+### 這次處理的難題
+
+- **同一套判斷方式：** 完整校正與舊的潤飾流程，共用依上下文判斷同音字和斷詞的指引；開啟校正的翻譯也一致。保留模稜兩可、否定與說話者原意，不寫死替換，也不增加模型呼叫。
+- **狀態要記對：** 舊的潤飾成功時，記為 corrected 或 unchanged，不再誤記為 not_requested；只記狀態，不記文字。
+
+### 完成狀態
+
+離線檢查只驗證請求的組成與「沒有改字也接受」，不代表模型準確度，也無法說明過去辨識錯誤的原因。測試沒有收集任何私人錄音、上下文或逐字稿。
+
+### Sentence-level correction guidance
+
+Full-text correction, the legacy polish route and correction-enabled translation share contextual homophone and word-boundary guidance, preserving ambiguity, negation and intent without hardcoded substitutions or extra model calls. Successful legacy polishing is recorded as corrected or unchanged. Offline checks verify request construction only, not model accuracy.
+
+## 2026-10-14 — 第一次安裝更安全，說明更好找
+
+第一次安裝要準備模型、簽署與授權，步驟一多就容易出錯，說明也散在不同地方。
+
+### 這次處理的難題
+
+- **安全建立私人執行版：** 只複製允許清單內的檔案、檢查模型校驗碼、不覆蓋既有安裝，並用合成資料測試失敗情境。
+- **步驟順序一致：** README、AI 安裝與簽署說明統一為「準備 → 簽署 → 為私人 App 授權」，並加入下載逾時上限與重試指引。
+- **文件有入口：** 新增文件首頁、使用手冊、英文概覽與常見問題，以及檢查 AI 是否依據文件回答的測試；同步更新架構與隱私說明，以及 llms.txt 的正式 Markdown 連結。
+
+### Safer first install and clearer docs
+
+First-install preparation creates a separate private runtime with allowlisted files and model checksums, refuses to overwrite an existing installation, and has synthetic failure tests. README, AI installation and signing guides now share one order: prepare, sign, then grant permissions. A documentation home, user manual, English overview, FAQ and evidence-based AI reading checks were added, and llms.txt links to canonical Markdown.
+
+## 2026-10-13 — 可選的錄音上下文與取消按鈕
+
+辨識時若能參考游標附近的文字，人名和專有名詞比較容易認對；處理途中想反悔時，也需要一個能停下來的按鈕。
+
+### 這次處理的難題
+
+- **上下文只讀一小段：** 讀取游標附近有限長度的文字；要傳給 OpenAI 需要另外同意，預設關閉。擷取的文字不寫入檔案、診斷紀錄或開發用固定案例。
+- **每個工作都能取消：** 處理中顯示小型取消按鈕，可以單獨取消這次工作；過期的進度與貼上回呼會被忽略。
+
+### 完成狀態
+
+合成資料測試涵蓋同意開關、上下文長度、過期結果與原生設定。不同 App 能否讀到上下文、實際準確度能提升多少，依環境而定。
+
+### Optional recording context and cancellation
+
+Bounded nearby-text context can help recognition, with separate, default-off OpenAI context consent; captured text stays out of files, diagnostics and fixtures. A compact cancel control stops each job, and stale progress or paste callbacks are ignored. Synthetic tests cover consent, bounds, stale results and native settings.
+
+## 2026-10-13 — 統一模組名稱，私人資料改用新加密格式
+
+### 這次處理的難題
+
+- **名稱一致：** Swift 目標、匯入、原始碼與測試路徑、文件，統一為 EdgelessType、EdgelessTypeCore、EdgelessTypeTests。
+- **加密格式升級不能掉資料：** 一般憑證改用 v2 驗證式加密格式與新檔名；透過經過測試的離線一次性遷移，保留服務商紀錄與金鑰，金鑰表備份與加密資料備份分開存放。
+- **不破壞既有安裝：** 保留已安裝的簽署 ID、憑證身分與語音引擎通訊協定；舊名稱只留在這些穩定介面與遷移讀取器中。
+
+### 完成狀態
+
+提供準備、完成、還原三個遷移工具與合成遷移測試，不含任何私人資料或簽署金鑰。
+
+### Unified module names and explicit private-data migration
+
+Targets, imports, paths and docs now use EdgelessType, EdgelessTypeCore and EdgelessTypeTests. Credentials move to v2 authenticated-encryption envelopes through a tested offline one-time migration with separate key-table backups. Installed signing IDs, certificate identity and the speech-worker protocol are preserved. Prepare, finalize and rollback tools ship with synthetic tests only.
+
+## 2026-10-13 — 處理狀態更清楚，本機更新更穩
+
+錄音停止之後，畫面要讓人看得出現在進行到哪一步；更新私人版時，也不能因為重新簽署而弄丟系統權限。
+
+### 這次處理的難題
+
+- **每一步都看得出來：** 錄音、上傳、辨識、校正與翻譯分開顯示；處理中以轉圈、階段名稱和經過秒數呈現，不再顯示錄音控制。
+- **連線省一點：** 重用不留快取、cookie 與憑證的連線；同時開啟校正與翻譯時合併成一次請求，保留原本的服務商與模型選擇。
+- **記下時間，不記內容：** 系統有提供時，記錄上傳、等待回覆與連線秒數；不記錄錄音或文字。實際速度依環境而定。
+- **更新不弄丟權限：** 本機更新必須使用穩定、有憑證支撐的簽署身分；本機版與公開或測試版的 bundle ID 分開；驗證身分連續，失敗時還原原本已簽署的檔案。也支援自訂本機 App 名稱，從公開原始碼單向更新私人執行版，保留個人資料並記錄建置來源。
+- **自己簽署：** 新增逐步簽署指南與只讀取中繼資料的小工具，協助每位使用者選擇自己鑰匙圈中的身分；不散布作者的憑證或私鑰。
+- **句尾不加句號：** 聽寫與翻譯的預覽及貼上文字，移除句尾的中英文句號；句中標點保留。
+- **Grok Bot 也能自動貼上：** 對讀不到輔助使用焦點的編輯器，加入窄範圍備援：原本的程式仍在前景時，只送一次貼上。使用者已確認自動貼上與預覽收起；其他版本與欄位尚未驗證。
+- **公開工程筆記：** 發布去識別化的[工程指南](docs/ENGINEERING-LESSONS.md)，記錄診斷步驟、失敗的嘗試、可重現的檢查與證據限制，並更正關於雲端音訊的過時架構說明。
+
+### Clearer processing states and stable local updates
+
+Recording, upload, recognition, correction and translation now show as distinct states with a spinner, stage name and elapsed time. HTTP sessions are ephemeral and reused, and correction plus translation share one request. Local updates require a stable certificate-backed identity, keep a separate bundle ID and restore signed files on failure. A personal signing guide, trailing full-stop removal, a narrow Grok Bot paste fallback and a de-identified [engineering guide](docs/ENGINEERING-LESSONS.md) were added.
+
+## 2026-10-11 — 辨識和校正可以分開選
+
+語音辨識與文字校正原本綁在一起。有人想用雲端辨識，有人只想在本機處理；舊的校正流程也可能因為一個替換字沒通過本機規則，就把整段回覆丟掉。
+
+### 這次處理的難題
+
+- **辨識方式自己選：** App 選單與字典視窗可以選擇 Whisper（本機）或 GPT Transcribe（OpenAI 雲端）。本機 Whisper 仍是預設；選擇在錄音開始時固定，這段錄音不會中途改變。
+- **上傳錄音要先同意：** 啟用 OpenAI 辨識前需要明確同意上傳錄音。專用的 OpenAI 金鑰設定沿用加密紀錄，不影響校正服務商的選擇。
+- **連線只走固定路線：** 固定的 HTTPS 端點、通用的上傳檔名、WAV 與檔案大小檢查、阻擋轉址，錯誤訊息不外洩細節。雲端模式不預熱本機 Whisper，也不會默默改用其他後端。
+- **校正改收整段文字：** 不再要求模型回傳逐字替換清單，而是直接接受完整的校正文字，只檢查傳輸成功、回覆完整、內容非空，再於本機轉成繁體。移除同音字比對、修改次數、字數、位置比對與標點比較等限制。
+- **長文與失敗都照舊安全：** 長文分段校正後一次貼上，校正後不再額外潤飾；所有輸出（包含退回的原文）都先轉成繁體。失敗、不完整或空白的回覆，維持原本的提示與補救方式。本機失敗紀錄只保存原因代碼、服務商與時間，之後的成功不會覆蓋它。
+
+### 完成狀態
+
+本機 96 項核心測試、貼上流程回歸測試、App 自我檢查與文件隱私檢查都通過。原生設定測試確認預設為本機、未同意時無法開啟雲端、選擇會保存，也能切回本機 Whisper。雲端辨識測試沒有使用真實金鑰或私人錄音；實際能否使用，取決於使用者的 OpenAI 帳號。雲端辨識需要網路與 API 額度，會把錄音傳給 OpenAI，每個檔案上限 25 MB；基本回覆檢查無法保證模型品質或原意不變。
+
+### 特別感謝 / Acknowledgments
 
 感謝 [@plumy_river（X）](https://x.com/plumy_river)／[@plumyriver0327（Threads）](https://www.threads.com/@plumyriver0327) 對本次更新提供的開發協助與支持。
 
-## 2026-10-11 — Paste reliability and output controls
+Special thanks to [@plumy_river on X](https://x.com/plumy_river) / [@plumyriver0327 on Threads](https://www.threads.com/@plumyriver0327) for their development assistance and support for this update.
 
-### Fixed
+### Selectable transcription and full-text correction
 
-- Restored automatic paste in Codex when its accessibility interface does not expose a focused editor. The fallback sends a single paste chord only while the original Codex process is in the foreground.
-- Fixed previews remaining open after manual paste. Queued paste requests are consumed while delivery is pending, and an already-confirmed automatic insertion is not sent a second time.
-- Expanded focus resolution to nested focus relationships and editable ancestors, and added text readback support for attributed values and character ranges.
-- Kept unverified keyboard delivery separate from confirmed insertion. Clipboard restoration and confirmed-insertion timing still require destination readback.
+Recognition and correction are now separate choices: local Whisper by default, or OpenAI GPT Transcribe after explicit audio-upload consent. The cloud path uses a fixed HTTPS endpoint, WAV and size checks, redirect blocking and sanitized errors, and never silently falls back to another backend. Correction now accepts the model's complete text after transport, completeness and non-empty checks, followed by local Traditional Chinese conversion. 96 core tests and the paste-flow, self-check and privacy checks passed; no real credentials or private recordings were used. Hosted CI results are in [GitHub Actions](https://github.com/0xedgelessblade/edgelesstype/actions).
 
-### Changed
+## 2026-10-11 — 貼上更可靠，校正失敗看得出來
 
-- Removed the previous four-second and eight-second application deadlines for contextual correction. Correction waits for completion or a transport/provider error; translation retains its configured deadline.
-- Processed long dictation in ordered segments of approximately 1,200 characters, preferring sentence boundaries and preserving whitespace and protected technical spans. Each segment uses the existing correction validator before the combined result is pasted once.
-- Enforced local Traditional Chinese conversion for recognition results, model output, fallback text, previews, and the final paste entry point. Conversion failure stops output instead of returning unconverted text.
-- Added persistent, dismissible correction-failure notices. A failed correction no longer silently looks like a successful one. The quota/rate-limit notice uses this wording:
+在 Codex 裡聽寫時，文字有時沒有自動貼上；手動貼上後預覽不會收起；校正失敗時，畫面也看不出來。
+
+### 這次處理的難題
+
+- **Codex 讀不到輸入框也能貼：** Codex 的輔助介面沒有提供焦點編輯器時，只在原本的 Codex 仍在前景時送出一次貼上。
+- **不重複貼上：** 手動貼上後預覽會收起；等待送出時的重複貼上請求會被吃掉，已確認插入的文字不會再送第二次。
+- **找得到更多輸入框：** 支援巢狀焦點與可編輯的上層元素，並能讀回帶格式的文字與字元範圍。沒有驗證到的鍵盤送出，不會被當成已確認插入。
+- **校正不再被短秒數打斷：** 移除校正原本 4 秒與 8 秒的期限，等到完成或真的出錯為止；翻譯仍保留設定的期限。長文依句子邊界切成約 1,200 字的段落，保留空白與技術片段，各段校正後一次貼上。
+- **一律輸出繁體：** 辨識結果、模型輸出、退回的原文、預覽與最後貼上前，都在本機轉成繁體；轉換失敗就停止輸出，不貼出未轉換的文字。
+- **失敗要說出來：** 校正失敗時顯示可關閉的明確提示，不再看起來像成功。額度或頻率限制的提示文字為：
 
   > **AI 校正未完成**
   >
   > 服務端額度不足或請求過於頻繁。<br>
   > 請檢查服務商帳戶或稍後再試。
 
-- Reported translation failures without inserting an unsuccessful translation, and avoided a follow-up polish request after correction has already failed.
+  翻譯失敗時直接告知，不插入失敗的翻譯；校正已失敗時，也不再多送一次潤飾請求。
 
-### Validation
+### 完成狀態
 
-- 80 core tests passed locally, including a delayed nine-second provider fixture, long-text integrity, Traditional Chinese conversion, and error-notice cases.
-- Repeatable in-memory paste-flow checks cover automatic/manual delivery, duplicate prevention, clipboard changes, cancellation, the Codex fallback, and the final conversion gate. These checks do not control a real desktop editor.
-- Automatic paste and preview dismissal were confirmed through a scoped Codex user test. The native warning layout was checked with fixed, non-sensitive fixture text.
-- Release build, documentation references, and public-source checks passed locally. Hosted CI results are tracked separately in [GitHub Actions](https://github.com/0xedgelessblade/edgelesstype/actions).
+本機 80 項核心測試通過，包含 9 秒延遲的服務商固定案例、長文完整性、繁體轉換與錯誤提示。記憶體中的貼上流程檢查涵蓋自動與手動貼上、防止重複、剪貼簿變化、取消、Codex 備援與最後的轉換關卡，但不操作真實編輯器。使用者已實際確認 Codex 自動貼上與預覽收起；原生警告畫面以固定、不含個資的文字檢查過。
 
-### Privacy and limitations
+這次原始碼更新不含錄音、真實聽寫範例、API 金鑰、私人字典、執行設定或本機診斷檔。服務商的額度、頻率、回覆大小與網路問題仍可能發生；Codex 備援無法透過輔助介面證明已插入，因此會保留剪貼簿內容供補救，也不宣稱一定適用每一種編輯器或未來版本。
 
-- No recordings, real dictation samples, API credentials, private dictionaries, runtime settings, or local diagnostic files are included in this source update.
-- Local paste diagnostics contain bounded, fixed stage labels only; they do not contain dictated text or clipboard contents and are not uploaded.
-- Provider quotas, rate limits, response-size limits, and network failures still apply. Long text may require multiple correction requests. An indivisible technical span can exceed the normal segment size.
-- The Codex fallback cannot prove insertion through accessibility readback. It retains the dictated clipboard for recovery and records delivery without claiming confirmed insertion. Compatibility with every editor or future app version is not implied.
+### Paste reliability and output controls
 
-### 繁體中文摘要
-
-- 修復 Codex 自動貼上、手動貼上後預覽不收起，以及貼上時序造成的重複輸入。
-- 移除上下文校正的短秒數期限，長文分段校正後一次合併貼上。
-- 所有中文結果在本機轉為繁體；轉換失敗時停止輸出。
-- 校正失敗顯示可關閉的明確提示，額度／頻率限制採用上方指定文案。
-- 公開內容僅包含原始碼、固定測試與文件；驗證範圍與已知限制如上所述。
+Automatic paste works again in Codex when its accessibility interface hides the focused editor, previews close after manual paste, and confirmed insertions are never sent twice. Correction no longer has 4- and 8-second deadlines, long dictation is corrected in ordered segments of about 1,200 characters and pasted once, and every output is converted to Traditional Chinese locally or not pasted at all. Correction failures now show a dismissible notice. 80 core tests and in-memory paste-flow checks passed; a scoped Codex user test confirmed automatic paste. Hosted CI results are in [GitHub Actions](https://github.com/0xedgelessblade/edgelesstype/actions).
