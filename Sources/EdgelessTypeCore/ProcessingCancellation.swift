@@ -39,3 +39,29 @@ public final class ProcessingCancellation: @unchecked Sendable {
         pending.forEach { $0() }
     }
 }
+
+/// Work started on another thread beside the main request; its result is read only if needed.
+public final class PendingResult<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private let finished = DispatchSemaphore(value: 0)
+    private var result: Result<Value, Error>?
+
+    public init(queue: DispatchQueue = .global(qos: .userInitiated), _ work: @escaping () throws -> Value) {
+        queue.async {
+            let outcome = Result { try work() }
+            self.lock.lock(); self.result = outcome; self.lock.unlock()
+            self.finished.signal()
+        }
+    }
+
+    public var isFinished: Bool { lock.lock(); defer { lock.unlock() }; return result != nil }
+
+    /// Returns at once when the work already finished; a job cancellation stops the wait, not the work.
+    public func wait(cancellation: ProcessingCancellation? = nil) throws -> Value {
+        while finished.wait(timeout: .now() + 0.05) == .timedOut { try cancellation?.check() }
+        finished.signal()
+        try cancellation?.check()
+        lock.lock(); defer { lock.unlock() }
+        return try result!.get()
+    }
+}

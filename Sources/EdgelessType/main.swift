@@ -372,10 +372,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         panel.onConfirm = { [weak self] in self?.finish() }
         panel.onSkipCloud = { [weak self] in self?.currentProcessing?.cancellation.skipCloud() }
-        panel.onOfferLocal = { [weak self] in
-            guard let config = self?.currentProcessing?.config, config.residentSpeech != nil else { return }
-            DispatchQueue.global(qos: .userInitiated).async { try? ResidentSpeechEngine.shared.warmUp(config: config) }
-        }
         panel.onDegraded = { [weak self] outcome in
             guard let self, let notice = OutputPolicy.correctionNotice(outcome: outcome) else { return }
             self.correctionDegraded = true
@@ -923,6 +919,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         var transcript = ""
         var attempt = 0
         var recognizedLocally = false
+        // Cloud is the answer; local Whisper runs beside it on the same recording so switching after 5 seconds is instant.
+        // Its own token and hard link: skipping the cloud does not stop it, and a finished cloud leaves it to end on its own
+        // (cancelling would kill the resident worker); the link outlives this job's recording and is deleted when the draft ends.
+        let localCopy = url.deletingLastPathComponent().appendingPathComponent("local-" + url.lastPathComponent)
+        let localDraft = recordingTranscription.backend.isCloud && (try? FileManager.default.linkItem(at: url, to: localCopy)) != nil ? PendingResult {
+            defer { self.cleanup(localCopy) }
+            return try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary,
+                recordingContext: job.context).transcribe(url: localCopy, cancellation: ProcessingCancellation()))
+        } : nil
         while true {
             attempt += 1
             var evidence: [String: String]?
@@ -939,9 +944,11 @@ final class AppController: NSObject, NSApplicationDelegate {
                 if backend.isCloud, cancellation.didSkipCloud, !recognizedLocally {
                     recognizedLocally = true
                     do {
-                        updateUI(for: job) { self.panel.cloudRecognition = false; self.panel.showWorking(.recognizing) }
-                        transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary,
-                            recordingContext: job.context).transcribe(url: url, cancellation: cancellation))
+                        if localDraft?.isFinished != true {
+                            updateUI(for: job) { self.panel.cloudRecognition = false; self.panel.showWorking(.recognizing) }
+                        }
+                        transcript = try localDraft?.wait(cancellation: cancellation) ?? OutputPolicy.traditional(Transcriber(config: config,
+                            vocabulary: recordingVocabulary, recordingContext: job.context).transcribe(url: url, cancellation: cancellation))
                         break
                     } catch {
                         guard !cancellation.isCancelled else { return }

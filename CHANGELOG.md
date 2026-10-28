@@ -6,6 +6,25 @@ edgelesstype 是 Apple silicon Mac 的開源語音輸入工具：預設用本機
 
 edgelesstype is an open-source voice dictation app for Apple silicon Macs, with local Whisper by default and optional OpenAI or Google Gemini cloud recognition. Each entry starts with the problem a user ran into, then the changes, what has and has not been verified, and an English summary. Dates mark source updates, not separately packaged releases.
 
+## 2026-10-28 — 按下「改用本機」，答案已經在那裡
+
+上一版的「改用本機 · Fn」按下去之後，本機才開始辨識，等了雲端 5 秒，還要再等一次本機。現在雲端和本機從一開始就同時處理同一段錄音：平常仍貼雲端的結果；雲端超過 5 秒時按 Fn，本機的答案通常已經算好，馬上貼上。
+
+### 這次處理的難題
+
+- **兩邊同時跑，不能互相干擾：** 本機用自己的取消開關。按「改用本機」只中止雲端，不會把正在算的本機一起停掉。
+- **雲端先回來時，本機不能硬砍：** 硬停會殺掉常駐的本機辨識程序，下一次就要重新載入模型。所以讓它默默算完再丟掉結果。
+- **錄音檔不能先被刪：** 雲端貼完後 App 會刪掉錄音，本機那邊改讀同一個檔案的硬連結，算完自己刪除。
+- **代價：** 雲端模式每次講話，電腦都會多跑一次本機 Whisper，比較耗電和 GPU。
+
+### 完成狀態
+
+135 項自動測試通過，新增「本機結果可立即取用」「取消後不再等待」「本機失敗只在讀取時出現」。App 可以編譯。還沒在真實的慢雲端情境按過 Fn。
+
+### Local Whisper runs beside cloud recognition
+
+Cloud and local Whisper now start on the same recording together. The cloud result is still the one pasted; when the cloud takes 5 seconds or more, tapping Fn pastes the local result, which is usually ready already. The local job has its own cancellation token and reads a hard link of the recording, so skipping the cloud does not stop it and a finished cloud does not kill the resident worker. Every cloud dictation now also runs local Whisper. 135 automated tests passed; not yet tried in a real slow session.
+
 ## 2026-10-27 — 雲端慢的時候，讓你自己決定要不要等
 
 講完一段話，雲端有時幾秒就回來，有時要等很久。等的人不知道還要多久，也沒有辦法改變什麼。這次我們不替你猜，等滿 5 秒就把選擇交給你：辨識框右側浮出「改用本機 · Fn」，點它或再按一次 Fn，雲端立刻取消，改用電腦上的 Whisper 辨識同一段錄音。

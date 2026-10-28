@@ -18,8 +18,6 @@ final class RecordChrome {
     var onSkipCloud: (() -> Void)?
     /// Set per job: cloud recognition may offer local Whisper after a slow wait.
     var cloudRecognition = false
-    /// Fires once when the local button appears, so the engine can load before it is pressed.
-    var onOfferLocal: (() -> Void)?
     var onDegraded: ((String) -> Void)?
     var onFailure: ((String, String) -> Void)?
 
@@ -167,7 +165,6 @@ final class RecordChrome {
                 if local || ProcessingPlan.shouldOfferRoughPaste(stage: stage, elapsed: elapsed) {
                     self.pill.offer(local ? "改用本機" : "先貼原文")
                     self.place(width: 360, height: 64)
-                    if local { self.onOfferLocal?() }
                 }
             }
             self.pill.needsDisplay = true

@@ -58,6 +58,28 @@ final class ProcessingSpeedTests: XCTestCase {
         XCTAssertThrowsError(try token.check())
     }
 
+    func testParallelLocalResultIsReadyWhenTheCloudIsAbandoned() throws {
+        let local = PendingResult { "本機合成文字" }
+        XCTAssertEqual(try local.wait(), "本機合成文字")
+        XCTAssertTrue(local.isFinished)
+        XCTAssertEqual(try local.wait(cancellation: ProcessingCancellation()), "本機合成文字")
+    }
+
+    func testCancellingTheJobStopsWaitingForTheLocalResult() {
+        let gate = DispatchSemaphore(value: 0)
+        let local = PendingResult { () -> String in gate.wait(); return "late" }
+        let token = ProcessingCancellation()
+        token.cancel()
+        XCTAssertThrowsError(try local.wait(cancellation: token))
+        XCTAssertFalse(local.isFinished)
+        gate.signal()
+    }
+
+    func testLocalFailureSurfacesOnlyWhenRead() {
+        let local = PendingResult { () -> String in throw ProcessingError.cancelled }
+        XCTAssertThrowsError(try local.wait())
+    }
+
     func testRoughPasteOfferAppearsOnlyAfterCloudStepsWaitThreeSeconds() {
         XCTAssertFalse(ProcessingPlan.shouldOfferRoughPaste(stage: .correcting, elapsed: 2.9))
         XCTAssertTrue(ProcessingPlan.shouldOfferRoughPaste(stage: .correcting, elapsed: 3))
