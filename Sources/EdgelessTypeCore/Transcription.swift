@@ -298,6 +298,20 @@ public enum CloudAudioRetry {
         guard let error = error as? CloudError else { return false }
         return [.invalidResponse, .incomplete, .unavailable, .timeout, .network].contains(error)
     }
+
+    /// A content block answers the same recording the same way; resending it only adds a wait.
+    public static func shouldResend(_ error: Error, evidence: [String: String]?) -> Bool {
+        if evidence?["blockReason"] != nil { return false }
+        if let finish = evidence?["finishReason"], blockedFinishReasons.contains(finish) { return false }
+        return shouldResend(error)
+    }
+    static let blockedFinishReasons: Set = ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"]
+
+    /// Cloud recognition gave no text, so the parallel local draft is pasted; only account problems still need the user afterwards.
+    public static func localFallbackOutcome(_ error: Error?) -> String {
+        guard let error = error as? CloudError, [.quota, .authentication, .invalidKey, .missingKey].contains(error) else { return "skipped" }
+        return error.rawValue
+    }
 }
 
 /// Explicit opt-in audio upload; no logging, persistent cache or redirects.

@@ -6,6 +6,27 @@ edgelesstype 是 Apple silicon Mac 的開源語音輸入工具：預設用本機
 
 edgelesstype is an open-source voice dictation app for Apple silicon Macs, with local Whisper by default and optional OpenAI or Google Gemini cloud recognition. Each entry starts with the problem a user ran into, then the changes, what has and has not been verified, and an English summary. Dates mark source updates, not separately packaged releases.
 
+## 2026-10-29 — 雲端沒給字，就貼本機的
+
+講完話，有時提示框一下就不見了，連按 Fn 的機會都沒有。查了失敗紀錄：20 次裡有 11 次是 Gemini 沒說原因就擋下回覆，大約 3 秒就結束，比「改用本機」按鈕出現的 5 秒還早。另一種是雲端回了空白，App 以為你沒講話，安靜收掉。
+
+現在本機一直在旁邊辨識同一段錄音，所以雲端沒給字時，直接貼本機的結果。
+
+### 這次處理的難題
+
+- **被擋就不要再等一次：** 同一段錄音重送還是會被擋，只是多等 3 秒。有封鎖原因的回覆不再重送。
+- **空白回覆不再安靜消失：** 雲端回空白、但本機有聽到字時，改貼本機，並在失敗紀錄記一筆，之後能看出有多常發生。
+- **不吵你，但該知道的要知道：** 網路、逾時、被擋這類狀況直接貼本機，不跳提示；金鑰或額度出問題時，貼上後仍會提醒，免得雲端壞了你一直不知道。
+- **真的沒聽到才失敗：** 只有本機也沒聽到字時，才出現紅色失敗提示和「重試」。
+
+### 完成狀態
+
+137 項自動測試通過，新增「被擋的回覆不重送」和「改貼本機時只在帳戶問題才提醒」。App 可以編譯。私人版已更新。被 Gemini 擋下的真實情境無法刻意重現，還沒親眼看到它改貼本機。
+
+### Paste local Whisper when the cloud gives no text
+
+Cloud failures after the resend, and empty cloud replies, now paste the local Whisper draft that runs beside the cloud instead of showing a failure card or ending silently. Replies blocked by the provider (`blockReason` or a blocking `finishReason`) are no longer resent, since the same audio is blocked again. Key and quota problems still show a notice after pasting. The failure card with「重試」appears only when local Whisper also hears nothing. 137 automated tests passed; not yet seen in a real blocked reply.
+
 ## 2026-10-28 — 按下「改用本機」，答案已經在那裡
 
 上一版的「改用本機 · Fn」按下去之後，本機才開始辨識，等了雲端 5 秒，還要再等一次本機。現在雲端和本機從一開始就同時處理同一段錄音：平常仍貼雲端的結果；雲端超過 5 秒時按 Fn，本機的答案通常已經算好，馬上貼上。

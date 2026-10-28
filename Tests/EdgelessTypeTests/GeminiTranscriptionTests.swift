@@ -58,6 +58,24 @@ final class GeminiTranscriptionTests: XCTestCase {
         XCTAssertFalse(CloudAudioRetry.shouldResend(TranscriptionError.audioTooLarge))
     }
 
+    func testBlockedRepliesAreNotResentBecauseTheSameAudioIsBlockedAgain() {
+        XCTAssertFalse(CloudAudioRetry.shouldResend(CloudError.invalidResponse, evidence: ["blockReason": "OTHER", "httpStatus": "200"]))
+        XCTAssertFalse(CloudAudioRetry.shouldResend(CloudError.invalidResponse, evidence: ["finishReason": "PROHIBITED_CONTENT"]))
+        XCTAssertTrue(CloudAudioRetry.shouldResend(CloudError.invalidResponse, evidence: ["finishReason": "STOP", "parts": "missing"]))
+        XCTAssertTrue(CloudAudioRetry.shouldResend(CloudError.network, evidence: nil))
+        XCTAssertFalse(CloudAudioRetry.shouldResend(CloudError.quota, evidence: nil))
+    }
+
+    func testLocalFallbackStaysQuietUnlessTheAccountNeedsAttention() {
+        for error in [CloudError.invalidResponse, .incomplete, .network, .timeout, .offline, .invalidRequest] {
+            XCTAssertEqual(CloudAudioRetry.localFallbackOutcome(error), "skipped")
+        }
+        XCTAssertEqual(CloudAudioRetry.localFallbackOutcome(nil), "skipped")
+        XCTAssertEqual(CloudAudioRetry.localFallbackOutcome(CloudError.quota), "quota")
+        XCTAssertEqual(OutputPolicy.correctionNotice(outcome: CloudAudioRetry.localFallbackOutcome(CloudError.invalidKey))?.label, "金鑰問題")
+        XCTAssertNil(OutputPolicy.correctionNotice(outcome: CloudAudioRetry.localFallbackOutcome(CloudError.network)))
+    }
+
     func testAudioRequestsGiveUpOnStalledRepliesInsteadOfSpinning() throws {
         XCTAssertEqual(AudioUploadPolicy.responseTimeout(audioBytes: 44 + 16 * 32_000), 19)
         XCTAssertEqual(AudioUploadPolicy.responseTimeout(audioBytes: 44 + 3_600 * 32_000), 180)

@@ -166,6 +166,9 @@ enum HiddenInput {
     }
 }
 
+/// Logged when the cloud replied with no text although local Whisper heard speech.
+enum CloudRecognitionGap: Error { case emptyReply }
+
 struct Transcriber {
     let config: AppConfig
     var vocabulary: VocabularySettings? = nil
@@ -928,6 +931,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             return try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary,
                 recordingContext: job.context).transcribe(url: localCopy, cancellation: ProcessingCancellation()))
         } : nil
+        func recognizeLocally() throws -> String {
+            if localDraft?.isFinished != true {
+                updateUI(for: job) { self.panel.cloudRecognition = false; self.panel.showWorking(.recognizing) }
+            }
+            return try localDraft?.wait(cancellation: cancellation) ?? OutputPolicy.traditional(Transcriber(config: config,
+                vocabulary: recordingVocabulary, recordingContext: job.context).transcribe(url: url, cancellation: cancellation))
+        }
+        var localOutcome = "skipped"
         while true {
             attempt += 1
             var evidence: [String: String]?
@@ -944,11 +955,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 if backend.isCloud, cancellation.didSkipCloud, !recognizedLocally {
                     recognizedLocally = true
                     do {
-                        if localDraft?.isFinished != true {
-                            updateUI(for: job) { self.panel.cloudRecognition = false; self.panel.showWorking(.recognizing) }
-                        }
-                        transcript = try localDraft?.wait(cancellation: cancellation) ?? OutputPolicy.traditional(Transcriber(config: config,
-                            vocabulary: recordingVocabulary, recordingContext: job.context).transcribe(url: url, cancellation: cancellation))
+                        transcript = try recognizeLocally()
                         break
                     } catch {
                         guard !cancellation.isCancelled else { return }
@@ -959,10 +966,18 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
                 if backend.isCloud { TranscriptionFailureLog.save(backend: backend, error: error, attempt: attempt, evidence: evidence) }
                 // The same recording goes out once more before the user sees a failure.
-                if attempt == 1, backend.isCloud, CloudAudioRetry.shouldResend(error) {
+                if attempt == 1, backend.isCloud, CloudAudioRetry.shouldResend(error, evidence: evidence) {
                     updateUI(for: job) { self.panel.showWorking(.uploading, progress: 0) }
                     continue
                 }
+                // The cloud gave up before the user could choose; the local draft of the same recording is pasted instead of a failure card.
+                if backend.isCloud, error is CloudError, let local = try? recognizeLocally(), SpeechContent.hasWords(local) {
+                    transcript = local
+                    recognizedLocally = true
+                    localOutcome = CloudAudioRetry.localFallbackOutcome(error)
+                    break
+                }
+                guard !cancellation.isCancelled else { return }
                 let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
                     ?? (error as? SpeechEngineError)?.errorDescription ?? (error as? OutputConversionError)?.errorDescription ?? "轉寫失敗，沒有貼上。"
                 // Cloud failures keep the recording in memory only while the card is open, so it can be resent without speaking again.
@@ -976,6 +991,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
         guard !cancellation.isCancelled else { return }
+        // An empty cloud reply used to end the job silently; the local draft decides whether there was speech.
+        if recordingTranscription.backend.isCloud, !recognizedLocally, !SpeechContent.hasWords(transcript),
+           let local = try? recognizeLocally(), SpeechContent.hasWords(local) {
+            TranscriptionFailureLog.save(backend: recordingTranscription.backend, error: CloudRecognitionGap.emptyReply, attempt: attempt, evidence: nil)
+            transcript = local
+            recognizedLocally = true
+        }
+        guard !cancellation.isCancelled else { return }
         timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
         guard SpeechContent.hasWords(transcript) else {
             updateUI(for: job) { self.panel.hide() }
@@ -986,7 +1009,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if recognizedLocally {
             // Choosing local means no cloud correction either; paste the local text once.
             timing.model = config.residentSpeech?.displayName ?? "Small CPU"
-            timing.correctionOutcome = "skipped"
+            timing.correctionOutcome = localOutcome
             corrected = transcript
         } else if recordingTranscription.backend.mergesCorrection {
             // The audio request already returned corrected text; no second cloud round trip.
