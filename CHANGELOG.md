@@ -6,6 +6,23 @@ edgelesstype 是 Apple silicon Mac 的開源語音輸入工具：預設用本機
 
 edgelesstype is an open-source voice dictation app for Apple silicon Macs, with local Whisper by default and optional OpenAI or Google Gemini cloud recognition. Each entry starts with the problem a user ran into, then the changes, what has and has not been verified, and an English summary. Dates mark source updates, not separately packaged releases.
 
+## 2026-11-01 — 2 秒就能改用本機
+
+等 5 秒才能按 Fn 還是太久。現在雲端辨識等滿 2 秒，就會浮出「改用本機 · Fn」。
+
+### 這次處理的難題
+
+- **按得早，本機可能還沒算完：** 本機這時多半還在辨識，按下後會等它算完才貼上，所以不一定是立刻貼。雲端請求一樣馬上取消。
+- **雲端正常時，按鈕會更常出現：** 2 秒內沒回來就會看到它，不按就照常貼雲端的結果。
+
+### 完成狀態
+
+自動測試通過，按鈕出現的時機改為 2 秒。還沒在實際使用中看過 2 秒時的畫面。
+
+### Offer local recognition after 2 seconds
+
+The「改用本機 · Fn」button now appears after 2 seconds of cloud recognition instead of 5. Local Whisper may still be working at that point, so tapping Fn cancels the cloud and pastes as soon as the local result is ready. Not yet seen in real use.
+
 ## 2026-10-29 — 雲端沒給字，就貼本機的
 
 講完話，有時提示框一下就不見了，連按 Fn 的機會都沒有。查了失敗紀錄：20 次裡有 11 次是 Gemini 沒說原因就擋下回覆，大約 3 秒就結束，比「改用本機」按鈕出現的 5 秒還早。另一種是雲端回了空白，App 以為你沒講話，安靜收掉。

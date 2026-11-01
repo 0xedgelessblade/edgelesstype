@@ -88,10 +88,10 @@ final class ProcessingSpeedTests: XCTestCase {
         XCTAssertFalse(ProcessingPlan.shouldOfferRoughPaste(stage: .uploading, elapsed: 9))
     }
 
-    func testLocalRecognitionOfferAppearsOnlyAfterCloudRecognitionWaitsFiveSeconds() {
-        XCTAssertFalse(ProcessingPlan.shouldOfferLocalRecognition(stage: .uploading, elapsed: 4.9))
-        XCTAssertTrue(ProcessingPlan.shouldOfferLocalRecognition(stage: .uploading, elapsed: 5))
-        XCTAssertTrue(ProcessingPlan.shouldOfferLocalRecognition(stage: .recognizing, elapsed: 5))
+    func testLocalRecognitionOfferAppearsOnlyAfterCloudRecognitionWaitsTwoSeconds() {
+        XCTAssertFalse(ProcessingPlan.shouldOfferLocalRecognition(stage: .uploading, elapsed: 1.9))
+        XCTAssertTrue(ProcessingPlan.shouldOfferLocalRecognition(stage: .uploading, elapsed: 2))
+        XCTAssertTrue(ProcessingPlan.shouldOfferLocalRecognition(stage: .recognizing, elapsed: 2))
         XCTAssertFalse(ProcessingPlan.shouldOfferLocalRecognition(stage: .correcting, elapsed: 9))
         XCTAssertFalse(ProcessingPlan.shouldOfferLocalRecognition(stage: .translating, elapsed: 9))
     }

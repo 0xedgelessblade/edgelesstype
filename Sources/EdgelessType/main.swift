@@ -922,7 +922,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var transcript = ""
         var attempt = 0
         var recognizedLocally = false
-        // Cloud is the answer; local Whisper runs beside it on the same recording so switching after 5 seconds is instant.
+        // Cloud is the answer; local Whisper runs beside it on the same recording so switching does not start from zero.
         // Its own token and hard link: skipping the cloud does not stop it, and a finished cloud leaves it to end on its own
         // (cancelling would kill the resident worker); the link outlives this job's recording and is deleted when the draft ends.
         let localCopy = url.deletingLastPathComponent().appendingPathComponent("local-" + url.lastPathComponent)
