@@ -10,6 +10,12 @@
 4. 執行 `python3 Scripts/test-core.py`、`bash Scripts/pack-app.sh`。
 5. 用自己的金鑰在 UI「測試連線」，再實測一段中英夾雜短句與翻譯。不得把金鑰寫進程式或測試。
 
+## Google 的校正模型可以選
+
+`CloudProvider.correctionModels` 列出使用者可選的校正模型，第一個是預設。目前只有 Google 有兩個：`gemini-3.6-flash`（預設）與 `gemini-3.8-flash`；翻譯與 Gemini 一趟式仍固定 `gemini-3.8-flash`。選擇存在 `Config/cloud.json` 的 `correctionModels`（服務商代號 → 模型 ID），由 `CloudPreferences.correctionModel(for:)` 讀取；存檔裡不再提供的 ID 會退回預設，不會送進請求。`CloudWire.request` 只在用途是校正、而且草稿指定的模型在該服務商清單內時才採用它。
+
+依據是 2026-11-10 用正式校正提示詞跑的 17 句固定測試（各一輪）：3.8 全對、中位數 3.2 秒；3.6 對 16 句、1.7 秒，錯的那句是同音字沒修到正解。更輕的 `gemini-3.5-flash-lite` 只對 11 句且會刪字，所以不列入選項。要再加選項，先用 `correction-probe` 的句子比過品質。
+
 ## Claude 的預設推理設定
 
 Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thinking.type = disabled`，並保留 `output_config.effort = low`。Haiku 5.5 預設是 adaptive thinking，僅設 low 不代表關閉；官方允許在 high 或以下停用 thinking。此設定優先考量短句互動，不代表已完成真實帳戶的速度／翻譯品質比較。換模型時須重新核對該模型是否允許停用 thinking，不能直接沿用其他服務商的 `reasoning_effort` 欄位。參考 [Haiku 5.5 官方說明](https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5)。
@@ -51,7 +57,7 @@ Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thin
 
 校正提示詞保持在 550 字元以內，通用規則優先。新錯字通常加入測試，避免把整個測試集塞進提示詞；送到模型的字典不含內部 UUID 或空白欄位。
 
-`Config/last-latency.json` 可記錄校正是 corrected、unchanged、rejected、timeout 等狀態，只有狀態與計時，沒有錄音或文字。此檔不公開。`Config/latency-history.json` 另外保留最近 500 次貼上的秒數、錄音長度、雲端請求次數與改用本機的原因（slow／chosen／failed／empty），同樣只有數字、不公開；`python3 Scripts/latency-report.py` 會列出中位數、p90、p99 與超過 3／5／10 秒的次數。
+`Config/last-latency.json` 可記錄校正是 corrected、unchanged、rejected、timeout 等狀態，只有狀態與計時，沒有錄音或文字。此檔不公開。`Config/latency-history.json` 另外保留最近 500 次貼上的秒數、錄音長度、當時的辨識方式（`backend`）、雲端請求次數與改用本機的原因（slow／chosen／failed／empty），同樣只有數字、不公開；`python3 Scripts/latency-report.py` 會依辨識方式分組列出中位數、p90、辨識與校正各自的中位數，以及超過 3／5／10 秒的次數；加標註之前的舊紀錄原樣保留，歸在 unlabelled。
 
 `correction-probe` 是可選的真實 API 測試，會用目前選用服務商與已儲存金鑰，送出程式內固定範例與字典並消耗額度；不要在沒有使用者授權時執行。一般回歸測試不會連線。
 
@@ -69,5 +75,7 @@ Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thin
 
 - `geminiTranscribe`: `POST /v1beta/interactions` with `model=gemini-3.5-transcribe`, `generation_config.transcription_config.mode=smart` and dictionary words as `custom_vocabulary` (max 100; cannot be combined with diarization or timestamps). The transcript is read from `steps[].content[].text` when `status` is `completed`, then enters the normal correction stage.
 - `geminiDirect`: `POST /v1beta/models/gemini-3.8-flash:generateContent` with `systemInstruction` = `GeminiAudioWire.directSystemPrompt`, an `inlineData` audio part, the dictionary (and approved context) as JSON text, `temperature 0` and `thinkingConfig.thinkingLevel=low` (this model rejects `minimal` with HTTP 400). The reply is accepted like full-text correction (`finishReason == STOP`, thoughts ignored, empty allowed) and the controller records `correctionOutcome = "merged"`, skipping the separate correction request and the legacy polish route. Translation mode still runs the translation request afterwards.
+
+- `geminiLive`: `LiveTranscriptionSession` over `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent` with `x-goog-api-key` as a header. Setup sends `model=models/gemini-3.5-transcribe-live`, `responseModalities=[TEXT]`, `inputAudioTranscription` with empty `languageCodes` (automatic detection) and dictionary words as `customVocabulary`, and `realtimeInputConfig.automaticActivityDetection.disabled=true`. After `setupComplete` it sends `activityStart`, `realtimeInput.audio` pieces (`audio/pcm;rate=16000`, 3200 bytes) and `activityEnd` at release. `serverContent.inputTranscription.text` is accumulated; interim text is ignored. The recording is complete on `generationComplete` or, without speech, on `voiceActivity.type=ACTIVITY_END`, and only after `activityEnd` was sent. The final text is awaited for `GeminiLiveWire.finalTimeout` (4 s). A finished file is never streamed: `TranscriptionBackend.uploadBackend` routes it through `geminiTranscribe`. The session logic is tested with a scripted `LiveSocket`; `LiveTranscriptionTests` make no network calls.
 
 The main controller snapshots the choice at recording start and uses it through processing. Cloud selection skips local model warm-up and sends a keyless HEAD to the audio host on the audio client's own session; all results enter the same Traditional conversion and paste pipeline. Use the [OpenAI file-transcription docs](https://developers.openai.com/api/docs/guides/speech-to-text), [Gemini audio transcription](https://ai.google.dev/gemini-api/docs/transcribe) and [Gemini thinking levels](https://ai.google.dev/gemini-api/docs/thinking) when changing models or fields.

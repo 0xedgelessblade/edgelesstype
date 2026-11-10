@@ -1,13 +1,14 @@
 import Foundation
 
 public enum TranscriptionBackend: String, Codable, CaseIterable {
-    case localWhisper, openAI, geminiTranscribe, geminiDirect
+    case localWhisper, openAI, geminiTranscribe, geminiDirect, geminiLive
     public var title: String {
         switch self {
         case .localWhisper: return "Whisper（本機）"
         case .openAI: return "GPT Transcribe（OpenAI 雲端）"
         case .geminiTranscribe: return "Gemini Transcribe（Google 雲端）"
         case .geminiDirect: return "Gemini 一趟式辨識＋校正（Google 雲端）"
+        case .geminiLive: return "Gemini 即時轉寫，邊講邊傳（Google 雲端）"
         }
     }
     public var isCloud: Bool { self != .localWhisper }
@@ -16,7 +17,7 @@ public enum TranscriptionBackend: String, Codable, CaseIterable {
         switch self {
         case .localWhisper: return nil
         case .openAI: return .openai
-        case .geminiTranscribe, .geminiDirect: return .google
+        case .geminiTranscribe, .geminiDirect, .geminiLive: return .google
         }
     }
     public var providerTitle: String { cloudProvider?.title ?? "本機" }
@@ -27,10 +28,15 @@ public enum TranscriptionBackend: String, Codable, CaseIterable {
         case .openAI: return OpenAITranscriptionWire.model
         case .geminiTranscribe: return GeminiAudioWire.transcribeModel
         case .geminiDirect: return GeminiAudioWire.directModel
+        case .geminiLive: return GeminiLiveWire.model
         }
     }
     /// The cloud reply already contains context correction; no separate correction request follows.
     public var mergesCorrection: Bool { self == .geminiDirect }
+    /// Audio is sent while the key is held instead of after release.
+    public var streamsWhileRecording: Bool { self == .geminiLive }
+    /// What a finished recording is uploaded as when the live connection gave no text: same provider, same key.
+    public var uploadBackend: TranscriptionBackend { self == .geminiLive ? .geminiTranscribe : self }
     /// Short status for the dictionary window and menu.
     public var statusTitle: String {
         switch self {
@@ -38,6 +44,7 @@ public enum TranscriptionBackend: String, Codable, CaseIterable {
         case .openAI: return "GPT Transcribe · OpenAI 雲端"
         case .geminiTranscribe: return "Gemini Transcribe · Google 雲端"
         case .geminiDirect: return "Gemini 一趟式 · Google 雲端"
+        case .geminiLive: return "Gemini 即時 · Google 雲端"
         }
     }
 }

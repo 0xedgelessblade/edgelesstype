@@ -16,6 +16,7 @@ final class TranscriptionSettingsWindow: NSWindowController {
     private let cloudTitle = NSTextField(labelWithString: "")
     private let contextDetail = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
+    private let subtitle = NSTextField(labelWithString: "")
 
     init(store: TranscriptionPreferencesStore) {
         self.store = store
@@ -31,8 +32,9 @@ final class TranscriptionSettingsWindow: NSWindowController {
         guard let view = window?.contentView else { return }
         let title = NSTextField(labelWithString: "語音辨識方式")
         title.font = .systemFont(ofSize: 24, weight: .semibold); title.frame = NSRect(x: 26, y: 584, width: 560, height: 36)
-        let subtitle = NSTextField(wrappingLabelWithString: "第一步：把錄音轉成文字。這與後面的文字校正／翻譯服務分開設定。")
-        subtitle.textColor = .secondaryLabelColor; subtitle.frame = NSRect(x: 26, y: 532, width: 565, height: 42)
+        // The same line the API window shows, previewing the pick below before it is saved.
+        subtitle.font = .systemFont(ofSize: 13, weight: .medium); subtitle.lineBreakMode = .byTruncatingTail
+        subtitle.frame = NSRect(x: 26, y: 541, width: 565, height: 24)
         backend.addItems(withTitles: TranscriptionBackend.allCases.map(\.title))
         backend.frame = NSRect(x: 26, y: 485, width: 566, height: 34)
         backend.target = self; backend.action = #selector(changed)
@@ -96,6 +98,8 @@ final class TranscriptionSettingsWindow: NSWindowController {
     }
     private func updateDetails() {
         let choice = selected
+        subtitle.stringValue = CloudAccess.pipelineSummary(backend: choice)
+        subtitle.toolTip = subtitle.stringValue
         let cloud = choice.isCloud
         let provider = choice.providerTitle
         consent.isHidden = !cloud; keyButton.isEnabled = cloud
@@ -105,22 +109,24 @@ final class TranscriptionSettingsWindow: NSWindowController {
         cloudContextSwitch.setAccessibilityLabel("允許將錄音上下文傳送至 \(cloud ? provider : "雲端")")
         switch choice {
         case .localWhisper:
-            detail.stringValue = "使用本機 Whisper Small／Large-v3 Turbo，錄音不會送到雲端。\n可從選單選擇本機模型。後續文字校正與翻譯仍依原有設定處理。"
+            detail.stringValue = "使用本機 Whisper Small／Large-v3 Turbo，錄音不會送到雲端。\n可從選單選擇本機模型。"
         case .openAI:
-            detail.stringValue = "使用 OpenAI gpt-transcribe，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 OpenAI；單次錄音上限 25 MB。\n沿用 OpenAI 金鑰，不改變文字校正服務商。輸出仍轉為繁體中文。"
+            detail.stringValue = "使用 OpenAI gpt-transcribe，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 OpenAI；單次錄音上限 25 MB。\n輸出仍轉為繁體中文。"
         case .geminiTranscribe:
-            detail.stringValue = "使用 Google \(GeminiAudioWire.transcribeModel)，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 Google；單次錄音約 7 分鐘以內。字典詞會一併送出輔助辨識。\n沿用 Google 金鑰，不改變文字校正服務商；辨識後仍依原有設定校正。"
+            detail.stringValue = "使用 Google \(GeminiAudioWire.transcribeModel)，需要網路與 API 額度。\n每次結束錄音後，音訊將傳送至 Google；單次錄音約 7 分鐘以內。字典詞會一併送出輔助辨識。"
+        case .geminiLive:
+            detail.stringValue = "使用 Google \(GeminiLiveWire.model)，按住說話時就把聲音即時傳到 Google，放開後約一秒內取得文字。\n錄音中途取消時，已說出的部分也已送出。字典詞會一併送出；連線失敗時改貼本機結果。"
         case .geminiDirect:
-            detail.stringValue = "使用 Google \(GeminiAudioWire.directModel)，一次請求同時完成辨識與上下文校正，不再另送校正。\n每次結束錄音後，音訊與字典將傳送至 Google；單次錄音約 7 分鐘以內。\n沿用 Google 金鑰；中翻英仍依原有翻譯服務商處理。"
+            detail.stringValue = "使用 Google \(GeminiAudioWire.directModel)，一次請求同時完成辨識與校正，不使用「API 設定」的校正模型。\n每次結束錄音後，音訊與字典將傳送至 Google；單次錄音約 7 分鐘以內。\n中翻英仍用「API 設定」選的服務商。"
         }
         cloudContextRow.isHidden = contextSwitch.state == .off
         contextDetail.stringValue = contextSwitch.state == .off
             ? "預設關閉。開啟後只讀取目前輸入框附近文字；不截圖、不儲存內容。\n不支援的輸入框會自動略過，錄音照常進行。"
             : (cloud && cloudContextSwitch.state == .off
                 ? "目前選用雲端辨識；未允許傳送，上下文暫不擷取。\n開啟上方選項後，附近文字會隨錄音送至 \(provider)。"
-                : (choice == .geminiTranscribe
-                    ? "Gemini Transcribe 不接受上下文文字；此模式只送字典詞，不送附近文字。"
-                    : "不截圖、不儲存內容。雲端辨識時，僅在允許後隨錄音傳送。\n若上下文進入辨識結果，後續雲端校正／翻譯仍可能收到。"))
+                : (choice == .geminiTranscribe || choice == .geminiLive
+                    ? "這個辨識模式不接受上下文文字；只送字典詞，不送附近文字。"
+                    : "不截圖、不儲存內容。雲端辨識時，僅在允許後隨錄音傳送。\n若上下文進入辨識結果，後續的校正／中翻英仍可能收到。"))
         saveButton.title = "儲存設定"
     }
     @objc private func openKey() { if let provider = selected.cloudProvider { onKey?(provider) } }

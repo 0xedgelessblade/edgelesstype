@@ -107,7 +107,7 @@ bash Scripts/pack-app.sh
 | 服務商 | 預設校正／翻譯模型 | 金鑰入口 |
 |---|---|---|
 | xAI | 校正 `grok-4.3`；翻譯 `grok-4.7` | [xAI Console](https://console.x.ai/) |
-| Google | `gemini-3.8-flash`；思考等級 `low`（此模型不接受 `minimal`） | [Google AI Studio](https://aistudio.google.com/api-keys) |
+| Google | 校正可在 API 設定選 `gemini-3.6-flash`（預設，較快）或 `gemini-3.8-flash`（較準）；翻譯固定 `gemini-3.8-flash`；思考等級 `low`（3.8 不接受 `minimal`） | [Google AI Studio](https://aistudio.google.com/api-keys) |
 | Claude | `claude-haiku-5-5`；校正與翻譯皆關閉推理 | [Claude Platform](https://platform.claude.com/settings/keys) |
 | OpenAI | `gpt-6-luna` | [OpenAI Platform](https://platform.openai.com/api-keys) |
 
@@ -167,6 +167,7 @@ App 建置會重映射 Swift 原始碼路徑；引擎也會重映射 C/C++ 路�
 - **GPT Transcribe（OpenAI 雲端）**：固定使用 `gpt-transcribe`。需勾選錄音上傳同意並儲存；之後每次結束錄音才傳送該次音訊，需要網路、OpenAI 金鑰與 API 額度。
 - **Gemini Transcribe（Google 雲端）**：固定使用 `gemini-3.5-transcribe`，走 Interactions API，開啟 smart 模式（去除語氣填充詞）並把字典詞作為 `custom_vocabulary` 送出；辨識結果仍依原有設定進行文字校正。此模式不接受附近文字上下文。
 - **Gemini 一趟式辨識＋校正（Google 雲端）**：固定使用 `gemini-3.8-flash` 的 `generateContent`，錄音與字典一次送出，模型直接回傳已依語境校正的文字，之後不再另送校正請求；中翻英仍依翻譯服務商處理。計時檔的校正狀態記為 `merged`。
+- **Gemini 即時轉寫，邊講邊傳（Google 雲端）**：固定使用 `gemini-3.5-transcribe-live`，走 Live API 的 WebSocket。按住說話時就把聲音分小段即時送到 Google（金鑰放在標頭，不放網址），放開後約一秒內取得文字，再依原有設定校正。錄音中途取消時，已說出的部分也已送出。連線失敗、逾時或沒有回字時貼並行的本機結果；本機也沒聽到字才把整段錄音改走 Gemini Transcribe 上傳一次。
 
 「金鑰設定」沿用該服務商加密保存的紀錄，不更改文字校正服務商。OpenAI 單次錄音上限 25 MB；Google 兩種模式的 WAV 以 base64 內嵌，單次約 14 MB（16 kHz 單聲道約 7 分鐘）；過大時會提示分段錄製或切回本機，不會自動切換辨識服務。API 回覆仍在本機轉為繁體。
 

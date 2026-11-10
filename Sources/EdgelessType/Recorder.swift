@@ -17,7 +17,8 @@ final class Recorder {
     private var observer: NSObjectProtocol?
     private var url: URL?
 
-    func start(cueURL: URL?, onReady: @escaping () -> Bool, onFailure: @escaping () -> Void) throws -> URL {
+    /// `onPCM` receives every converted piece (16 kHz mono 16-bit) on the audio thread, in the order it is written to the file.
+    func start(cueURL: URL?, onPCM: ((Data) -> Void)? = nil, onReady: @escaping () -> Bool, onFailure: @escaping () -> Void) throws -> URL {
         precondition(Thread.isMainThread)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("edgelesstype-\(UUID().uuidString).wav")
         self.url = url
@@ -25,7 +26,7 @@ final class Recorder {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw CaptureError.noInput }
         failureStage = "file"
-        sink = try CaptureFile(url: url, inputFormat: format)
+        sink = try CaptureFile(url: url, inputFormat: format, onPCM: onPCM)
         cue = cueURL.flatMap { NSSound(contentsOf: $0, byReference: true) }
         active = true
         input.installTap(onBus: 0, bufferSize: 512, format: format) { [weak self] buffer, _ in
@@ -108,7 +109,9 @@ final class CaptureFile {
     private let converter: AVAudioConverter
     private let outputFormat: AVAudioFormat
     private(set) var framesWritten: AVAudioFramePosition = 0
-    init(url: URL, inputFormat: AVAudioFormat) throws {
+    private let onPCM: ((Data) -> Void)?
+    init(url: URL, inputFormat: AVAudioFormat, onPCM: ((Data) -> Void)? = nil) throws {
+        self.onPCM = onPCM
         outputFormat = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
         guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else { throw CaptureError.conversion }
         self.converter = converter
@@ -126,7 +129,18 @@ final class CaptureFile {
             supplied = true; state.pointee = .haveData; return buffer
         }
         if error != nil || status == .error { throw CaptureError.conversion }
-        if output.frameLength > 0 { try file.write(from: output); framesWritten += AVAudioFramePosition(output.frameLength) }
+        if output.frameLength > 0 { try file.write(from: output); framesWritten += AVAudioFramePosition(output.frameLength); emit(output) }
+    }
+    /// The same samples the file receives, as 16-bit little-endian PCM for a live listener.
+    fileprivate func emit(_ buffer: AVAudioPCMBuffer) {
+        guard let onPCM, let samples = buffer.floatChannelData?[0] else { return }
+        let count = Int(buffer.frameLength)
+        var data = Data(count: count * 2)
+        data.withUnsafeMutableBytes { raw in
+            let out = raw.bindMemory(to: Int16.self)
+            for index in 0..<count { out[index] = Int16(max(-1, min(1, samples[index])) * 32767).littleEndian }
+        }
+        onPCM(data)
     }
 }
 
@@ -139,7 +153,7 @@ extension CaptureFile {
                 state.pointee = .endOfStream; return nil
             }
             if error != nil || status == .error { throw CaptureError.conversion }
-            if output.frameLength > 0 { try file.write(from: output); framesWritten += AVAudioFramePosition(output.frameLength) }
+            if output.frameLength > 0 { try file.write(from: output); framesWritten += AVAudioFramePosition(output.frameLength); emit(output) }
             if status == .endOfStream || output.frameLength == 0 { break }
         }
     }

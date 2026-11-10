@@ -14,6 +14,8 @@ struct DictationTiming: Codable {
     var correctionTransfer: TranscriptionTransferTimings?
     var correctionOutcome = "not_requested"
     var correctionProvider: String?
+    /// The correction model asked for, so timings of different models can be told apart.
+    var correctionModel: String?
     var timeToPasteReadySeconds: Double = 0
     var timeToPasteConfirmedSeconds: Double = 0
     var manualPaste = false
@@ -25,6 +27,11 @@ struct DictationTiming: Codable {
     var cloudAttempts = 0
     /// Why local Whisper supplied the text in cloud mode: slow (timer), chosen (Fn), failed, empty. Nil when the cloud text was pasted.
     var localReason: String?
+    /// The recognition choice this recording was made with, so timings of different backends are never mixed. Nil in records from before the label existed.
+    var backend: String?
+    /// Live backend: key press to the server accepting audio, and release to the final text. Nil when that did not happen.
+    var liveConnectSeconds: Double?
+    var liveFinalSeconds: Double?
 
     func saveCorrectionFailure() {
         guard !["not_requested", "corrected", "unchanged", "merged", "skipped"].contains(correctionOutcome) else { return }
@@ -62,7 +69,11 @@ enum LatencyHistory {
                                     "correctionSeconds": timing.correctionSeconds, "translationSeconds": timing.translationSeconds,
                                     "timeToPasteReadySeconds": timing.timeToPasteReadySeconds, "cloudAttempts": timing.cloudAttempts,
                                     "correctionOutcome": timing.correctionOutcome, "manualPaste": timing.manualPaste]
+        if let backend = timing.backend { entry["backend"] = backend }
+        if let model = timing.correctionModel { entry["correctionModel"] = model }
         if let reason = timing.localReason { entry["localReason"] = reason }
+        if let seconds = timing.liveConnectSeconds { entry["liveConnectSeconds"] = seconds }
+        if let seconds = timing.liveFinalSeconds { entry["liveFinalSeconds"] = seconds }
         if let transfer = timing.audioTransfer, let data = try? JSONEncoder().encode(transfer),
            let numbers = try? JSONSerialization.jsonObject(with: data) { entry["audioTransfer"] = numbers }
         let url = AppPaths.projectRoot().appendingPathComponent("Config/latency-history.json")

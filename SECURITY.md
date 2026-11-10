@@ -24,6 +24,8 @@ Local Whisper remains the default. Audio upload requires a separately stored Ope
 
 The OpenAI transcription option reuses the encrypted OpenAI key record, and the Gemini options reuse the encrypted Google key record, independently of the selected text-correction provider. Gemini requests also carry dictionary words; the one-pass mode carries the fixed correction prompt. Merely opening the settings or saving a key does not enable audio upload. Preferences are runtime data in `Config/transcription.json` and are excluded from Git and public exports. Tests use synthetic bytes and URLProtocol fixtures, not private recordings or real credentials.
 
+The Gemini Live option is the one route that sends audio before the recording ends. With the same consent and Google key record, a WebSocket to the fixed Google host opens at the key press; the key is sent as a header, never in the URL, and redirects are refused. Audio leaves in small pieces while the key is held, so cancelling a recording does not recall what was already spoken. Nothing is streamed without consent, a stored key and a network path, or in the offline probe. Only timings (connect and release-to-text seconds) are recorded.
+
 ## Local code-signing identity
 
 API credentials keep the encrypted-file design above. A separate, user-approved code-signing identity may live in the login Keychain solely to give the local app a stable identity across updates. It is not an API key and is never exported or published. Public CI uses no private signing identity. Local updates require the private signing profile and verify continuity instead of falling back to ad-hoc signatures. See [stable local signing](docs/LOCAL-SIGNING.md).

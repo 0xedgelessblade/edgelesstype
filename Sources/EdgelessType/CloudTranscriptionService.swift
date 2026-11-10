@@ -22,7 +22,8 @@ enum CloudTranscriptionService {
         case .geminiTranscribe, .geminiDirect:
             return try CloudAudioClient.shared.transcribeGemini(audio: audio, backend: backend, preferences: preferences, key: key, terms: terms,
                 onProgress: onProgress, onTimings: onTimings, onFailureEvidence: onFailureEvidence, context: context, cancellation: cancellation)
-        case .localWhisper:
+        case .localWhisper, .geminiLive:
+            // Live audio is streamed by its own session; a finished file goes out as `uploadBackend`.
             throw TranscriptionError.cloudNotEnabled
         }
     }

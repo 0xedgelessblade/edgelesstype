@@ -11,7 +11,7 @@ final class GeminiTranscriptionTests: XCTestCase {
     }
 
     func testBackendMetadataAndConsentRules() throws {
-        XCTAssertEqual(TranscriptionBackend.allCases, [.localWhisper, .openAI, .geminiTranscribe, .geminiDirect])
+        XCTAssertEqual(TranscriptionBackend.allCases, [.localWhisper, .openAI, .geminiTranscribe, .geminiDirect, .geminiLive])
         XCTAssertEqual(TranscriptionBackend.geminiTranscribe.cloudProvider, .google)
         XCTAssertEqual(TranscriptionBackend.geminiDirect.cloudProvider, .google)
         XCTAssertNil(TranscriptionBackend.localWhisper.cloudProvider)

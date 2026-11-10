@@ -15,6 +15,39 @@ final class CloudModelIdentityTests: XCTestCase {
             }
         }
     }
+    func testGoogleCorrectionModelIsTheUsersChoiceAndDefaultsToTheFasterOne() throws {
+        XCTAssertEqual(CloudProvider.google.correctionModels, ["gemini-3.6-flash", "gemini-3.8-flash"])
+        XCTAssertEqual(CloudProvider.google.model(for: .correction), "gemini-3.6-flash")
+        XCTAssertEqual(CloudProvider.google.model(for: .translation), "gemini-3.8-flash")
+        XCTAssertEqual(CloudPreferences(provider: .google).correctionModel(for: .google), "gemini-3.6-flash")
+        let chosen = CloudPreferences(provider: .google, correctionModels: ["google": "gemini-3.8-flash"])
+        XCTAssertEqual(chosen.correctionModel(for: .google), "gemini-3.8-flash")
+        let draft = try ContextCorrection.draft(text: "fixture", entries: [], model: chosen.correctionModel(for: .google))
+        XCTAssertTrue(try CloudWire.request(draft, provider: .google, purpose: .correction, key: "fixture").url!.path.contains("gemini-3.8-flash:generateContent"))
+        let fallback = try ContextCorrection.draft(text: "fixture", entries: [], model: "gemini-3.6-flash")
+        XCTAssertTrue(try CloudWire.request(fallback, provider: .google, purpose: .correction, key: "fixture").url!.path.contains("gemini-3.6-flash:generateContent"))
+        // The choice is for correction only: the same draft sent as a translation keeps the fixed model.
+        XCTAssertTrue(try CloudWire.request(fallback, provider: .google, purpose: .translation, key: "fixture").url!.path.contains("gemini-3.8-flash:generateContent"))
+    }
+    func testUnknownOrForeignModelChoiceNeverReachesTheRequest() throws {
+        let stale = CloudPreferences(provider: .google, correctionModels: ["google": "retired-model", "openai": "gemini-3.8-flash"])
+        XCTAssertEqual(stale.correctionModel(for: .google), "gemini-3.6-flash")
+        XCTAssertEqual(stale.correctionModel(for: .openai), "gpt-6-luna")
+        let draft = try ContextCorrection.draft(text: "fixture", entries: [], model: "retired-model")
+        XCTAssertTrue(try CloudWire.request(draft, provider: .google, purpose: .correction, key: "fixture").url!.path.contains("gemini-3.6-flash:generateContent"))
+        for provider in CloudProvider.allCases where provider != .google {
+            XCTAssertEqual(provider.correctionModels, [provider.model(for: .correction)])
+            XCTAssertNil(provider.correctionModelHint(provider.model(for: .correction)))
+        }
+        XCTAssertEqual(CloudProvider.google.correctionModelHint("gemini-3.6-flash"), "較快")
+        XCTAssertEqual(CloudProvider.google.correctionModelHint("gemini-3.8-flash"), "較準")
+    }
+    func testSettingsSavedBeforeTheModelChoiceStillLoadAndRoundTrip() throws {
+        let legacy = try JSONDecoder().decode(CloudPreferences.self, from: Data(#"{"provider":"google"}"#.utf8))
+        XCTAssertEqual(legacy, CloudPreferences(provider: .google))
+        let chosen = CloudPreferences(provider: .google, correctionModels: ["google": "gemini-3.8-flash"])
+        XCTAssertEqual(try JSONDecoder().decode(CloudPreferences.self, from: JSONEncoder().encode(chosen)), chosen)
+    }
     func testReportedModelNeverFallsBackToRequestedName() throws {
         for provider in CloudProvider.allCases {
             let field = provider == .google ? "modelVersion" : "model"

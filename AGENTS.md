@@ -2,7 +2,7 @@
 
 - For an installation request, follow `docs/INSTALL_WITH_AI.md` and its privacy-first completion checklist. Do not treat installation as authorization to read secrets, enable cloud features, upload diagnostics, or publish code.
 - Support only Apple silicon M-series Macs on macOS 26 or later. Do not add Intel, Windows, Linux or CPU-only branches.
-- Keep the user interface small: provider selection, encrypted API key save/test/delete, and the dictionary. Model customization belongs in code, not a large model picker.
+- Keep the user interface small: provider selection, encrypted API key save/test/delete, and the dictionary. Model customization belongs in code, not a large model picker; the one exception is the short list in `CloudProvider.correctionModels`, which the API window offers only when a provider has more than one measured choice.
 - Start model changes in `Sources/EdgelessTypeCore/CloudProvider.swift`. Follow `DEVELOPMENT.md`; check current official provider docs before changing payload parameters.
 - Normal correction uses `ContextCorrection.correctFullText`: accept the complete, non-empty model reply after transport checks, then convert Chinese locally to Traditional. Do not reintroduce edit-count, homophone, dictionary-match or source-text validation; legacy helpers exist only for historical fixtures. Never treat a clipboard read or successful AX setter as evidence of successful insertion.
 - Preserve the v2 encrypted store format and independent provider records. Legacy v1 reads are confined to the explicit offline migration tool. Do not print, commit, screenshot, or ask for API keys in chat. Use the app's secure field and fixed test phrase.

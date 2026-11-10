@@ -11,10 +11,21 @@ public enum CloudProvider: String, Codable, CaseIterable {
     public func model(for purpose: CloudPurpose) -> String {
         switch self {
         case .xai: return purpose == .translation ? "grok-4.7" : "grok-4.3"
-        case .google: return "gemini-3.8-flash"
+        case .google: return purpose == .translation ? "gemini-3.8-flash" : CloudProvider.googleCorrectionModels[0]
         case .anthropic: return "claude-haiku-5-5"
         case .openai: return "gpt-6-luna"
         }
+    }
+    private static let googleCorrectionModels = ["gemini-3.6-flash", "gemini-3.8-flash"]
+    /// Correction models the user may pick between; the first is the default. On fixed cases the 3.6 model answered in
+    /// about half the time of 3.8 and missed one homophone that 3.8 fixed.
+    public var correctionModels: [String] {
+        self == .google ? CloudProvider.googleCorrectionModels : [model(for: .correction)]
+    }
+    /// One word that tells the choices apart in the settings menu.
+    public func correctionModelHint(_ model: String) -> String? {
+        guard self == .google else { return nil }
+        return model == CloudProvider.googleCorrectionModels[0] ? "較快" : "較準"
     }
     public var correctionTimeoutSeconds: TimeInterval { .infinity }
     public var modelsDescription: String {
@@ -28,10 +39,12 @@ public enum CloudProvider: String, Codable, CaseIterable {
         case .openai: return URL(string: "https://platform.openai.com/api-keys")!
         }
     }
-    public var endpoint: URL {
+    public var endpoint: URL { endpoint(model: model(for: .correction)) }
+    /// Only Google carries the model in the URL; the others send it in the body.
+    public func endpoint(model: String) -> URL {
         switch self {
         case .xai: return URL(string: "https://api.x.ai/v1/chat/completions")!
-        case .google: return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model(for: .correction)):generateContent")!
+        case .google: return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")!
         case .openai: return URL(string: "https://api.openai.com/v1/responses")!
         }
@@ -40,7 +53,22 @@ public enum CloudProvider: String, Codable, CaseIterable {
 
 public struct CloudPreferences: Codable, Equatable {
     public var provider: CloudProvider
-    public init(provider: CloudProvider = .xai) { self.provider = provider }
+    /// The user's correction model per provider (raw value → model ID); absent means that provider's default.
+    public var correctionModels: [String: String]
+    public init(provider: CloudProvider = .xai, correctionModels: [String: String] = [:]) {
+        self.provider = provider; self.correctionModels = correctionModels
+    }
+    private enum CodingKeys: String, CodingKey { case provider, correctionModels }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try values.decode(CloudProvider.self, forKey: .provider)
+        correctionModels = try values.decodeIfPresent([String: String].self, forKey: .correctionModels) ?? [:]
+    }
+    /// A stored ID that is no longer offered falls back to the default instead of reaching the request.
+    public func correctionModel(for provider: CloudProvider) -> String {
+        guard let chosen = correctionModels[provider.rawValue], provider.correctionModels.contains(chosen) else { return provider.model(for: .correction) }
+        return chosen
+    }
 }
 
 public struct CloudPreferencesStore {
@@ -86,12 +114,13 @@ public enum CloudWire {
     public static func request(_ body: ChatBody, provider: CloudProvider, purpose: CloudPurpose, key: String) throws -> URLRequest {
         guard !key.isEmpty else { throw CloudError.missingKey }
         guard !key.unicodeScalars.contains(where: CharacterSet.whitespacesAndNewlines.contains) else { throw CloudError.invalidKey }
-        var request = URLRequest(url: provider.endpoint)
+        // A correction draft may name any model its provider offers; everything else gets the fixed model for the purpose.
+        let model = purpose == .correction && provider.correctionModels.contains(body.model) ? body.model : provider.model(for: purpose)
+        var request = URLRequest(url: provider.endpoint(model: model))
         request.httpMethod = "POST"
         request.timeoutInterval = body.timeoutSeconds.isFinite ? body.timeoutSeconds : TimeInterval(Int32.max)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var payload: [String: Any]
-        let model = provider.model(for: purpose)
         switch provider {
         case .xai:
             var tuned = body; tuned.model = model
@@ -115,7 +144,7 @@ public enum CloudWire {
             request.setValue(key, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         case .google:
-            // gemini-3.8-flash accepts low/medium/high only; MINIMAL is rejected with HTTP 400.
+            // gemini-3.8-flash accepts low/medium/high only; MINIMAL is rejected with HTTP 400. gemini-3.6-flash also takes low.
             var generation: [String: Any] = ["maxOutputTokens": 4096, "thinkingConfig": ["thinkingLevel": "low"]]
             if body.jsonOutput { generation["responseMimeType"] = "application/json"; generation["responseJsonSchema"] = correctionSchema }
             payload = ["systemInstruction": ["parts": [["text": body.system]]],

@@ -140,6 +140,22 @@ final class ProcessingSpeedTests: XCTestCase {
         XCTAssertFalse(token.didSkipCloud)
     }
 
+    func testEverySettingsWindowDescribesTheSameSteps() {
+        let google = CloudPreferences(provider: .google)
+        XCTAssertEqual(PipelineSummary.dictation(backend: .geminiLive, cloud: google, correctionEnabled: true),
+                       "辨識：Gemini 即時 · Google 雲端　→　校正：Google gemini-3.6-flash")
+        let accurate = CloudPreferences(provider: .google, correctionModels: ["google": "gemini-3.8-flash"])
+        XCTAssertEqual(PipelineSummary.dictation(backend: .localWhisper, cloud: accurate, correctionEnabled: true),
+                       "辨識：Whisper · 本機　→　校正：Google gemini-3.8-flash")
+        XCTAssertEqual(PipelineSummary.dictation(backend: .openAI, cloud: google, correctionEnabled: false),
+                       "辨識：GPT Transcribe · OpenAI 雲端　→　校正：關閉")
+        // One-pass recognition corrects by itself, so the API window's correction model must not be named.
+        let onePass = PipelineSummary.dictation(backend: .geminiDirect, cloud: google, correctionEnabled: true)
+        XCTAssertEqual(onePass, "辨識＋校正：Gemini 一趟式 · Google 雲端（gemini-3.8-flash）")
+        XCTAssertFalse(onePass.contains("gemini-3.6-flash"))
+        XCTAssertEqual(PipelineSummary.translation(cloud: google), "中翻英：Google gemini-3.8-flash")
+    }
+
     func testRoughPasteOfferAppearsOnlyAfterCloudStepsWaitThreeSeconds() {
         XCTAssertFalse(ProcessingPlan.shouldOfferRoughPaste(stage: .correcting, elapsed: 2.9))
         XCTAssertTrue(ProcessingPlan.shouldOfferRoughPaste(stage: .correcting, elapsed: 3))

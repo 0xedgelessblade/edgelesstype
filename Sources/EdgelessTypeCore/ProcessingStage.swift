@@ -24,3 +24,17 @@ public enum ProcessingPlan {
         (stage == .uploading || stage == .recognizing) && elapsed >= 2
     }
 }
+
+/// What happens to a recording, in one line. Every settings window shows this same text, so they cannot disagree.
+public enum PipelineSummary {
+    public static func dictation(backend: TranscriptionBackend, cloud: CloudPreferences, correctionEnabled: Bool) -> String {
+        if backend.mergesCorrection {
+            return "辨識＋校正：\(backend.statusTitle)" + (backend.cloudModel.map { "（\($0)）" } ?? "")
+        }
+        let correction = correctionEnabled ? "\(cloud.provider.title) \(cloud.correctionModel(for: cloud.provider))" : "關閉"
+        return "辨識：\(backend.statusTitle)　→　校正：\(correction)"
+    }
+    public static func translation(cloud: CloudPreferences) -> String {
+        "中翻英：\(cloud.provider.title) \(cloud.provider.model(for: .translation))"
+    }
+}

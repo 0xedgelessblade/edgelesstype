@@ -179,9 +179,12 @@ struct Transcriber {
                     onFailureEvidence: (([String: String]) -> Void)? = nil, cancellation: ProcessingCancellation? = nil) throws -> String {
         try cancellation?.check()
         if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true { return "" }
-        return try TranscriptionRouter.run(transcription,
+        // A finished file is never streamed: the live backend uploads it through its same-provider file route.
+        var upload = transcription
+        upload.backend = transcription.backend.uploadBackend
+        return try TranscriptionRouter.run(upload,
             local: { try localTranscribe(url: url, cancellation: cancellation) },
-            cloud: { try CloudTranscriptionService.transcribe(url: url, preferences: transcription, terms: vocabulary?.entries.map(\.word) ?? config.terms,
+            cloud: { try CloudTranscriptionService.transcribe(url: url, preferences: upload, terms: vocabulary?.entries.map(\.word) ?? config.terms,
                 onProgress: onProgress, onTimings: onTimings, onFailureEvidence: onFailureEvidence, context: recordingContext, cancellation: cancellation) })
     }
 
@@ -347,6 +350,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
     private var vocabularyEditor: VocabularyWindow?
     private var pendingTiming: DictationTiming?
+    /// Open only while a live-backend recording is in progress; handed to the processing job at release.
+    private var liveSession: LiveTranscriptionSession?
     private struct RetryContext {
         var text: String
         var settings: VocabularySettings
@@ -520,6 +525,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 guard let self, self.session == .idle, !self.busy else { throw TranscriptionError.busy }
                 try AppPaths.transcriptionStore.save(preferences)
                 self.rebuildMenu()
+                self.apiEditor?.refresh()
                 if preferences.backend == .localWhisper { self.warmSpeechEngine() }
                 else {
                     ResidentSpeechEngine.shared.shutdown()
@@ -534,7 +540,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showAPISettings() {
-        if apiEditor == nil { apiEditor = APISettingsWindow() }
+        if apiEditor == nil {
+            apiEditor = APISettingsWindow()
+            apiEditor?.onChange = { [weak self] in self?.transcriptionEditor?.refresh() }
+        }
+        apiEditor?.refresh()
         apiEditor?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -740,6 +750,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             ?? VocabularySettings(entries: config.terms.map { VocabularyEntry(word: $0) })
         prewarmCorrectionConnection()
         prewarmAudioConnection()
+        openLiveSession()
         // Capture the destination at the Fn gesture, before any asynchronous cue.
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         contextCapture?.discard()
@@ -766,7 +777,9 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.panel.showMessage("錄音中斷或麥克風未就緒，請檢查麥克風權限與輸入裝置，再按 Fn 重試。")
             }
             do {
-                self.recordingURL = try recorder.start(cueURL: self.soundPlayer.cueURL(.start, preset: self.recordingSoundPreset), onReady: { [weak self, weak recorder] in
+                let live = self.liveSession
+                self.recordingURL = try recorder.start(cueURL: self.soundPlayer.cueURL(.start, preset: self.recordingSoundPreset),
+                                                       onPCM: live.map { live in { live.append($0) } }, onReady: { [weak self, weak recorder] in
                     guard let self, let recorder, self.recorder === recorder,
                           self.pendingRecordingStart.consume(token), self.session == mode else { return false }
                     self.startedAt = Date()
@@ -794,6 +807,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func cancel() {
         contextCapture?.discard(); contextCapture = nil
+        liveSession?.cancel(); liveSession = nil
         currentProcessing?.cancellation.cancel()
         currentProcessing = nil
         pendingRecordingStart.cancel()
@@ -816,6 +830,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var timing = DictationTiming(startedUptime: DispatchTime.now().uptimeNanoseconds,
             mode: mode == .translation ? "translation" : "dictation",
             model: recordingTranscription.backend.cloudModel ?? (config?.residentSpeech?.displayName ?? "Small CPU"))
+        timing.backend = recordingTranscription.backend.rawValue
         session = .idle
         pendingRecordingStart.cancel()
         soundPlayer.cancelPreview()
@@ -827,7 +842,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         recordingSoundPreset = nil
         let neverReady = startedAt == nil
         startedAt = nil
+        let live = liveSession
+        liveSession = nil
         guard let url, !neverReady else {
+            live?.cancel()
             contextCapture?.discard(); contextCapture = nil
             cleanup(url)
             busy = false
@@ -839,8 +857,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let startedTiming = timing
         status.button?.title = mode == .translation ? "譯中" : "轉寫"
         panel.cloudRecognition = recordingTranscription.backend.isCloud
-        panel.showWorking(recordingTranscription.backend.isCloud ? .uploading : .recognizing)
-        launchProcessing(url: url, mode: mode, timing: startedTiming)
+        // Live audio has already left; only the final text is awaited.
+        live?.finish()
+        panel.showWorking(recordingTranscription.backend.isCloud && live == nil ? .uploading : .recognizing)
+        launchProcessing(url: url, mode: mode, timing: startedTiming, live: live)
     }
 
     // Explicit development probe: synthetic PCM only; cloud access is blocked.
@@ -882,12 +902,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         let transcription: TranscriptionPreferences
         let targetPID: pid_t?
         let context: String?
+        var live: LiveTranscriptionSession? = nil
     }
 
-    private func launchProcessing(url: URL, mode: Session, timing: DictationTiming) {
-        guard let config else { contextCapture?.discard(); contextCapture = nil; cleanup(url); busy = false; panel.hide(); return }
+    private func launchProcessing(url: URL, mode: Session, timing: DictationTiming, live: LiveTranscriptionSession? = nil) {
+        guard let config else { live?.cancel(); contextCapture?.discard(); contextCapture = nil; cleanup(url); busy = false; panel.hide(); return }
         let job = ProcessingJob(config: config, vocabulary: recordingVocabulary,
-                                transcription: recordingTranscription, targetPID: targetPID, context: contextCapture?.take())
+                                transcription: recordingTranscription, targetPID: targetPID, context: contextCapture?.take(), live: live)
         contextCapture = nil
         currentProcessing = job
         DispatchQueue.global(qos: .userInitiated).async {
@@ -911,6 +932,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var timing = timing
         let speechStarted = DispatchTime.now().uptimeNanoseconds
         defer {
+            job.live?.cancel()
             cleanup(url)
             updateUI(for: job) {
                 self.busy = false
@@ -953,6 +975,17 @@ final class AppController: NSObject, NSApplicationDelegate {
             attempt += 1
             var evidence: [String: String]?
             do {
+                if let live = job.live, attempt == 1 {
+                    // The audio went out while the key was held; a digitally silent file needs no answer at all.
+                    if let data = try? Data(contentsOf: url), SpeechContent.isDigitalSilence(data) == true {
+                        live.cancel()
+                        transcript = ""
+                    } else {
+                        defer { timing.liveConnectSeconds = live.connectSeconds; timing.liveFinalSeconds = live.finalSeconds }
+                        transcript = try OutputPolicy.traditional(live.waitForText(cancellation: cancellation))
+                    }
+                    break
+                }
                 transcript = try OutputPolicy.traditional(Transcriber(config: config, vocabulary: recordingVocabulary, transcription: recordingTranscription, recordingContext: job.context).transcribe(url: url,
                     onProgress: { fraction in
                         self.updateUI(for: job) { self.panel.showWorking(fraction >= 1 ? .recognizing : .uploading, progress: fraction) }
@@ -1039,7 +1072,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             corrected = transcript
         } else if ProcessingPlan.separateCorrection(mode: mode, enabled: recordingVocabulary.contextCorrectionEnabled) && !transcript.isEmpty {
             updateUI(for: job) { self.status.button?.title = "校正"; self.panel.showWorking(.correcting) }
-            timing.correctionProvider = (try? CloudAccess.preferences.load().provider.rawValue)
+            let correctionChoice = try? CloudAccess.preferences.load()
+            timing.correctionProvider = correctionChoice?.provider.rawValue
+            timing.correctionModel = correctionChoice.map { $0.correctionModel(for: $0.provider) }
             if !pathSatisfied {
                 let decision = CloudRecovery.offline(transcript: transcript)
                 timing.correctionOutcome = decision.outcome
@@ -1164,6 +1199,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard ConnectionWarmup.shouldSend(offlineProbe: CloudAccess.offlineProbe, pathSatisfied: pathSatisfied, host: host, now: now, lastSent: warmedAt[host]) else { return }
         warmedAt[host] = now
         CloudClient.shared.prewarm(url)
+    }
+
+    /// Live backend only: the connection opens at the key press so the server is listening while the user speaks.
+    /// Without consent, a key or a network path no session exists and the finished file takes the upload route.
+    private func openLiveSession() {
+        liveSession?.cancel(); liveSession = nil
+        guard recordingTranscription.backend.streamsWhileRecording, recordingTranscription.cloudAudioConsent,
+              !CloudAccess.offlineProbe, pathSatisfied,
+              let secret = try? CloudAccess.store(.google).readSecret() else { return }
+        liveSession = try? LiveTranscriptionSession.open(key: String(decoding: secret, as: UTF8.self), terms: recordingVocabulary.entries.map(\.word))
     }
 
     /// Keyless TLS warmup for the cloud audio host, on the audio client's own session.

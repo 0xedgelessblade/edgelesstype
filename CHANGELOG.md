@@ -6,6 +6,48 @@ edgelesstype 是 Apple silicon Mac 的開源語音輸入工具：預設用本機
 
 edgelesstype is an open-source voice dictation app for Apple silicon Macs, with local Whisper by default and optional OpenAI or Google Gemini cloud recognition. Each entry starts with the problem a user ran into, then the changes, what has and has not been verified, and an English summary. Dates mark source updates, not separately packaged releases.
 
+## 2026-11-10 — 邊講邊傳：放開就有字
+
+上一版把偶爾十幾秒的等待蓋住了，但平常還是要等四到五秒，連三秒的短句也一樣。原因是雲端要等你放開 Fn、整段錄音傳完，才開始聽。
+
+這一版多了一個辨識選項「Gemini 即時轉寫，邊講邊傳」：按下 Fn 就連上 Google，你講的同時聲音一小段一小段送過去，放開時它已經聽得差不多了。
+
+### 這次處理的難題
+
+- **先量再做：** 用合成語音對同一段錄音各跑三次。整包上傳要 4.9 到 7.7 秒；邊講邊傳在放開後 0.56 到 0.75 秒就拿到文字，而且 23 秒的長句和 6 秒的短句一樣快。
+- **連線還沒好，你已經開口：** 連上 Google 要一秒半左右。這段時間說的話先留在記憶體，連上後照順序補送，開頭不會漏字。話很短、連線還沒好就放開，也會整段補送再收尾。
+- **停頓不等於講完：** 你中途停一下，Google 會先把前半段定稿。只有放開 Fn 之後的那個結束訊號才算講完，前後段會接起來。
+- **沒人聲不能乾等：** 只有雜音時 Google 不會回文字，只回「收到結束」。這也算收工，不會等到逾時。
+- **金鑰不進網址：** 官方範例把金鑰放在網址上，這裡改放標頭，實測一樣能連。
+- **出事有退路：** 連不上、放開後 4 秒還沒字、或回了空白，都改貼並行的本機結果；本機也沒聽到字，才把整段錄音改用 Gemini Transcribe 上傳一次。
+
+- **辨識快了，換校正拖：** 切換後頭三句真人錄音，辨識只要 0.6 秒，校正卻要 2.6 秒，有一次拖到 8.1 秒。用 App 真正的校正提示詞跑 17 句固定測試：`gemini-3.8-flash` 全對、中位數 3.2 秒；`gemini-3.6-flash` 1.7 秒、對 16 句；更輕的 `gemini-3.5-flash-lite` 快到 1.0 秒但只對 11 句，會漏修同音字還會刪字，不採用。
+- **快和準讓你自己選：** API 設定裡選 Google 時，多了一個校正模型選單：`gemini-3.6-flash`（較快，預設）和 `gemini-3.8-flash`（較準）。選了下一次錄音就生效。翻譯和一趟式不受影響，仍用 3.8。
+- **兩個設定視窗各說各話：** 「語音辨識」說校正「依原有設定」，「API 設定」說錄音「傳至所選服務商」，使用說明還停在只有 OpenAI 的年代。現在兩個視窗最上面是同一行「辨識：… → 校正：…」，出自同一段程式，不會再對不上；選一趟式時那一行會變成「辨識＋校正」，API 設定裡用不到的校正選單也會變淡。
+- **校正慢的時候，決定權還是在你：** 校正不會自己放棄。等超過 3 秒照舊浮出「先貼原文 · Fn」，要不要先貼由你決定。
+- **紀錄不再混在一起：** 每筆秒數紀錄都帶上當時的辨識方式，統計依方式分組；舊紀錄原樣保留。
+
+### 完成狀態
+
+自動測試通過（157 項，其中 10 項是連線順序與結束判斷，不連網路）。App 內的連線程式另外對真實服務跑過：正常語速 0.6 到 0.8 秒出字，沒人聲 0.5 秒收工。
+
+實際使用一個下午的秒數紀錄（同一天、同一個人、只有數字）：
+
+| | 一趟式整包上傳（84 句） | 邊講邊傳（103 句） |
+|---|---|---|
+| 放開到貼上，中位數 | 4.9 秒 | 2.5 秒 |
+| 十句裡最慢的那一句（p90） | 6.8 秒 | 3.9 秒 |
+| 等超過 5 秒的比例 | 49% | 7% |
+| 改貼本機的次數 | 21 | 0 |
+
+邊講邊傳的 2.5 秒裡，辨識只佔 0.6 秒（放開到拿到文字，最慢 1.5 秒），其餘是校正：`gemini-3.6-flash` 54 句中位數 1.6 秒，`gemini-3.8-flash` 33 句 2.1 秒。使用者對真人口語的辨識與校正結果表示滿意；這是使用感受，沒有逐句對答案。
+
+還沒驗證的：最慢的一句仍有 8.8 秒，慢在校正；很短的句子因為要等連線（中位數 1.5 秒），放開後可能要一秒以上；費用沒有查；只有一個人、一個下午的資料。聲音是在說話當下送出的，所以中途取消錄音時，已說出的部分也已經送到 Google。
+
+### Live transcription: text right after release
+
+A new opt-in backend, Gemini Live (`gemini-3.5-transcribe-live`), streams 16 kHz PCM over a WebSocket while the key is held instead of uploading the file after release. On synthetic speech the final text arrived 0.56 to 0.75 s after release, against 4.9 to 7.7 s for the upload route, and did not grow with recording length. Audio spoken before the server is ready is buffered and sent in order; a mid-utterance pause does not end the recording; a recording without speech ends on the activity-end event; the key travels in a header. A failed, slow (4 s) or empty live reply pastes the parallel local draft, and the file is uploaded through Gemini Transcribe only when local heard nothing. In the first three real dictations recognition took 0.6 s but correction 2.6 s, once 8.1 s, so correction models were measured on 17 fixed cases (`gemini-3.8-flash`: 3.2 s, 17 correct; `gemini-3.6-flash`: 1.7 s, 16; `gemini-3.5-flash-lite`: 1.0 s, 11, not offered). The API window now lets Google users pick the correction model, `gemini-3.6-flash` by default or `gemini-3.8-flash`; translation and the one-pass backend keep 3.8. Both settings windows now show the same one-line summary of the recognition and correction steps, generated in one place. A slow correction is never given up automatically: the「先貼原文 · Fn」offer after 3 s remains the user's choice. History records carry the backend and are reported per backend. One afternoon of real use: release-to-paste median fell from 4.9 s (84 one-pass dictations) to 2.5 s (103 live dictations), p90 from 6.8 s to 3.9 s, waits over 5 s from 49% to 7%, and no live dictation fell back to local. Of the 2.5 s, recognition is 0.6 s and correction the rest (3.6-flash 1.6 s, 3.8-flash 2.1 s). The user reports being satisfied with the text; it was not scored sentence by sentence. Correction is still a separate step and caused the slowest case (8.8 s); cost is unchecked; audio leaves while speaking, so a cancelled recording has already sent what was said.
+
 ## 2026-11-10 — 等太久就自動貼本機
 
 平常講完約 4 秒貼上，但偶爾要等十幾秒。原因有兩個：雲端偶爾回得很慢；雲端失敗時會把同一段錄音再送一次，等於等兩輪。其實本機早就在旁邊辨識完了，只是要你按 Fn 才用。

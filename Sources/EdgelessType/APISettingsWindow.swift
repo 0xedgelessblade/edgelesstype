@@ -2,6 +2,13 @@ import AppKit
 import EdgelessTypeCore
 
 enum CloudAccess {
+    /// The saved choices as the one line both settings windows show. `backend` previews an unsaved pick.
+    static func pipelineSummary(backend: TranscriptionBackend? = nil) -> String {
+        let saved = (try? AppPaths.transcriptionStore.load().backend) ?? .localWhisper
+        let cloud = (try? preferences.load()) ?? CloudPreferences()
+        let correcting = (try? AppPaths.vocabularyStore.load(fallbackTerms: []).contextCorrectionEnabled) ?? false
+        return PipelineSummary.dictation(backend: backend ?? saved, cloud: cloud, correctionEnabled: correcting)
+    }
     static var offlineProbe = false
     private(set) static var offlineProbeRequests = 0
     static var preferences: CloudPreferencesStore {
@@ -36,15 +43,20 @@ private enum CloudModelStatus {
             NotificationCenter.default.post(name: changed, object: nil)
         }
     }
+    /// The model the next request asks for: the user's pick for correction, the fixed one for translation.
+    static func requested(_ provider: CloudProvider, _ purpose: CloudPurpose) -> String {
+        guard purpose == .correction, let preferences = try? CloudAccess.preferences.load() else { return provider.model(for: purpose) }
+        return preferences.correctionModel(for: provider)
+    }
     static func description(for provider: CloudProvider) -> String {
-        let correction = last[key(provider, .correction)]?.model ?? provider.model(for: .correction)
+        let correction = last[key(provider, .correction)]?.model ?? requested(provider, .correction)
         let translation = last[key(provider, .translation)]?.model ?? provider.model(for: .translation)
-        return "校正：\(correction) · 翻譯：\(translation)"
+        return "校正：\(correction) · 中翻英：\(translation)"
     }
     static func detail(for provider: CloudProvider) -> String {
         [CloudPurpose.correction, .translation].map { purpose in
-            let title = purpose == .correction ? "校正" : "翻譯"
-            let requested = provider.model(for: purpose)
+            let title = purpose == .correction ? "校正" : "中翻英"
+            let requested = requested(provider, purpose)
             guard let reply = last[key(provider, purpose)] else {
                 return "\(title)：請求模型 \(requested)；本次啟動尚未收到成功回覆。"
             }
@@ -65,6 +77,12 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
     private let provider = NSPopUpButton()
     private let keyField = NSSecureTextField()
     private let models = NSTextField(wrappingLabelWithString: "")
+    /// Shown only for a provider that offers more than one correction model.
+    private let correctionModel = NSPopUpButton()
+    private let correctionLabel = NSTextField(labelWithString: "校正")
+    private let summary = NSTextField(labelWithString: "")
+    /// The provider or correction model changed; other windows show the same summary.
+    var onChange: (() -> Void)?
     private var modelObserver: NSObjectProtocol?
     private let savedStatus = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -104,7 +122,13 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
             view.addSubview(field)
         }
         label("API 設定", NSRect(x: 26, y: 400, width: 500, height: 34), bold: true)
-        label(keyOnlyProvider == nil ? "選一家服務商，儲存自己的 API 金鑰即可。" : "儲存 \(keyOnlyProvider!.title) 語音辨識金鑰；不改變文字校正服務商。", NSRect(x: 26, y: 368, width: 550, height: 24))
+        if keyOnlyProvider == nil {
+            summary.frame = NSRect(x: 26, y: 368, width: 555, height: 24)
+            summary.font = .systemFont(ofSize: 13, weight: .medium); summary.lineBreakMode = .byTruncatingTail
+            view.addSubview(summary)
+        } else {
+            label("儲存 \(keyOnlyProvider!.title) 語音辨識金鑰；不改變校正服務商。", NSRect(x: 26, y: 368, width: 550, height: 24))
+        }
         provider.frame = NSRect(x: 26, y: 321, width: 270, height: 32)
         provider.addItems(withTitles: CloudProvider.allCases.map(\.title))
         provider.target = self; provider.action = #selector(changed)
@@ -114,6 +138,14 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         models.frame = NSRect(x: 26, y: 284, width: 550, height: 29); models.textColor = .secondaryLabelColor
         view.addSubview(models)
         models.font = .systemFont(ofSize: 12)
+        correctionLabel.frame = NSRect(x: 26, y: 291, width: 34, height: 18)
+        correctionLabel.font = .systemFont(ofSize: 12); correctionLabel.textColor = .secondaryLabelColor
+        view.addSubview(correctionLabel)
+        correctionModel.frame = NSRect(x: 60, y: 285, width: 236, height: 28)
+        correctionModel.controlSize = .small; correctionModel.font = .systemFont(ofSize: 12)
+        correctionModel.target = self; correctionModel.action = #selector(pickCorrectionModel)
+        correctionModel.setAccessibilityLabel("校正模型")
+        view.addSubview(correctionModel); controls.append(correctionModel)
         savedStatus.frame = NSRect(x: 26, y: 252, width: 550, height: 24); view.addSubview(savedStatus)
         keyField.frame = NSRect(x: 26, y: 207, width: 465, height: 32)
         keyField.placeholderString = "貼上新金鑰；留白會沿用已儲存的金鑰"
@@ -123,7 +155,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         addButton(keyOnlyProvider == nil ? "儲存並使用" : "儲存金鑰", NSRect(x: 26, y: 153, width: 167, height: 35), #selector(save))
         if keyOnlyProvider == nil { addButton("測試連線", NSRect(x: 219, y: 153, width: 167, height: 35), #selector(test)) }
         addButton("刪除金鑰", NSRect(x: 413, y: 153, width: 167, height: 35), #selector(deleteKey))
-        label("金鑰加密保存在本機，不會顯示原文。各家金鑰分開保存。\n本機 Whisper 不上傳錄音；選用雲端辨識才傳送音訊至所選服務商。",
+        label("金鑰加密保存在本機，不會顯示原文。各家金鑰分開保存。\n這裡選的服務商負責校正與中翻英；錄音是否上傳、傳給誰，由「語音辨識」決定。",
               NSRect(x: 26, y: 84, width: 550, height: 55))
         status.frame = NSRect(x: 26, y: 18, width: 550, height: 56)
         status.textColor = .secondaryLabelColor; view.addSubview(status)
@@ -138,7 +170,35 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         refreshModels()
         refreshStatus()
     }
+    /// Takes effect at the next recording; the provider in use is not changed by picking a model.
+    @objc private func pickCorrectionModel() {
+        let offered = selection.correctionModels
+        guard offered.count > 1, offered.indices.contains(correctionModel.indexOfSelectedItem) else { return }
+        var preferences = (try? preferencesStore.load()) ?? CloudPreferences(provider: selection)
+        preferences.correctionModels[selection.rawValue] = offered[correctionModel.indexOfSelectedItem]
+        do { try preferencesStore.save(preferences); refreshModels(); onChange?() } catch { show(error) }
+    }
+    /// Re-read the saved choices; called when the window is shown or another window saved something.
+    func refresh() { refreshModels(); refreshStatus() }
     private func refreshModels() {
+        summary.stringValue = CloudAccess.pipelineSummary()
+        summary.toolTip = summary.stringValue
+        let offered = keyOnlyProvider == nil ? selection.correctionModels : []
+        let choosing = offered.count > 1
+        correctionModel.isHidden = !choosing; correctionLabel.isHidden = !choosing
+        // One-pass recognition corrects by itself: the pick stays changeable but visibly out of use.
+        let unused = ((try? AppPaths.transcriptionStore.load().backend) ?? .localWhisper).mergesCorrection
+        correctionModel.alphaValue = unused ? 0.4 : 1; correctionLabel.alphaValue = unused ? 0.4 : 1
+        models.frame = choosing ? NSRect(x: 310, y: 284, width: 270, height: 29) : NSRect(x: 26, y: 284, width: 550, height: 29)
+        if choosing {
+            let chosen = ((try? preferencesStore.load()) ?? CloudPreferences(provider: selection)).correctionModel(for: selection)
+            correctionModel.removeAllItems()
+            correctionModel.addItems(withTitles: offered.map { model in selection.correctionModelHint(model).map { model + " · " + $0 } ?? model })
+            correctionModel.selectItem(at: offered.firstIndex(of: chosen) ?? 0)
+            models.stringValue = "中翻英：" + selection.model(for: .translation)
+            models.toolTip = CloudModelStatus.detail(for: selection)
+            return
+        }
         let speechModels = TranscriptionBackend.allCases.filter { $0.cloudProvider == keyOnlyProvider }.compactMap(\.cloudModel).joined(separator: "／")
         models.stringValue = keyOnlyProvider == nil ? CloudModelStatus.description(for: selection) : "語音辨識：" + speechModels
         models.toolTip = keyOnlyProvider == nil ? CloudModelStatus.detail(for: selection) : "與文字校正共用 \(selection.title) 金鑰，辨識方式需另外在語音辨識設定選擇。"
@@ -157,9 +217,13 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
                 guard !key.unicodeScalars.contains(where: CharacterSet.whitespacesAndNewlines.contains) else { throw CloudError.invalidKey }
                 try store(selection).save(secret: Data(key.utf8))
             } else if (try? store(selection).verify()) != true { throw CloudError.missingKey }
-            if keyOnlyProvider == nil { try preferencesStore.save(CloudPreferences(provider: selection)) }
-            keyField.stringValue = ""; refreshStatus()
-            status.stringValue = keyOnlyProvider == nil ? "已儲存並選用 \(selection.title)。可按「測試連線」確認。" : "\(selection.title) 金鑰已儲存。文字校正服務商未變更。"
+            if keyOnlyProvider == nil {
+                var preferences = (try? preferencesStore.load()) ?? CloudPreferences(provider: selection)
+                preferences.provider = selection
+                try preferencesStore.save(preferences)
+            }
+            keyField.stringValue = ""; refresh(); onChange?()
+            status.stringValue = keyOnlyProvider == nil ? "已儲存並選用 \(selection.title)。可按「測試連線」確認。" : "\(selection.title) 金鑰已儲存。校正服務商未變更。"
         } catch { show(error) }
     }
     @objc private func deleteKey() {
@@ -187,7 +251,7 @@ final class APISettingsWindow: NSWindowController, NSWindowDelegate {
         generation = UUID(); let token = generation
         controls.forEach { $0.isEnabled = false }; status.stringValue = "正在測試 \(selected.title)…"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let body = ChatBody(model: selected.model(for: .correction), timeoutSeconds: 20, reasoningEffort: nil,
+            let body = ChatBody(model: CloudModelStatus.requested(selected, .correction), timeoutSeconds: 20, reasoningEffort: nil,
                                 system: "Reply with OK only.", user: "Connection test.")
             let result = Result {
                 try CloudClient.shared.complete(body, provider: selected, purpose: .correction, key: key) { model in

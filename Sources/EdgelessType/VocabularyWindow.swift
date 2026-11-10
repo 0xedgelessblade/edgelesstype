@@ -89,7 +89,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         enabled.target = self
         enabled.action = #selector(toggleContext)
         enabled.font = .systemFont(ofSize: 13, weight: .medium)
-        let privacy = NSTextField(wrappingLabelWithString: "開啟後，文字與字典送至校正服務。錄音是否上傳由「語音辨識」設定決定。")
+        let privacy = NSTextField(wrappingLabelWithString: "開啟後，文字與字典送至「API 設定」選的服務商校正。錄音是否上傳由「語音辨識」決定。")
         privacy.font = .systemFont(ofSize: 12)
         privacy.textColor = .secondaryLabelColor
         for child in [enabled, privacy] {
@@ -216,7 +216,7 @@ final class VocabularyWindow: NSWindowController, NSSearchFieldDelegate, NSWindo
         中翻英
         按住 Shift，再短按 Fn 開始，隨即放開 Shift。說完只短按 Fn 結束，會貼入英文。
 
-        中翻英需先到「API 設定」儲存有效金鑰，使用目前選用的雲端服務。第一步可到「語音辨識」選擇本機 Whisper 或 OpenAI GPT Transcribe；雲端選項會上傳錄音並使用 OpenAI 額度。
+        校正與中翻英使用「API 設定」選的服務商，需先在那裡儲存金鑰。辨識方式到「語音辨識」選擇：本機 Whisper 不上傳錄音；雲端選項會把錄音傳給所選的服務商並使用它的額度。
 
         若未自動貼入，可按 ⌘V 或 Ctrl+V。快捷鍵請短按，不要長按。
         """

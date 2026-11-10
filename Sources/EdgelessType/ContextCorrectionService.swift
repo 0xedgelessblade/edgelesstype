@@ -7,12 +7,13 @@ enum ContextCorrectionService {
         try cancellation?.check()
         let entries = ContextCorrection.candidates(in: text, settings: settings)
         guard settings.contextCorrectionEnabled, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
-        let provider = try CloudAccess.preferences.load().provider
+        let preferences = try CloudAccess.preferences.load()
+        let provider = preferences.provider
         var merged: TranscriptionTransferTimings?
         let result = try ContextCorrection.correctFullText(text) { chunk in
             try cancellation?.check()
             let body = try ContextCorrection.draft(text: chunk, entries: entries,
-                model: provider.model(for: .correction), timeout: provider.correctionTimeoutSeconds)
+                model: preferences.correctionModel(for: provider), timeout: provider.correctionTimeoutSeconds)
             return try CloudAccess.complete(body, purpose: .correction, cancellation: cancellation) { timings in
                 if let timings { merged = merged?.merged(with: timings) ?? timings }
             }
@@ -64,8 +65,9 @@ enum ContextCorrectionService {
             for (input, expected) in cases {
                 let start = Date()
                 do {
+                    let preferences = try CloudAccess.preferences.load()
                     let draft = try ContextCorrection.draft(text: input, entries: settings.entries,
-                        model: try CloudAccess.preferences.load().provider.model(for: .correction))
+                        model: preferences.correctionModel(for: preferences.provider))
                     let response = try CloudAccess.complete(draft, purpose: .correction)
                     if onlyPunctuation { print("fixed-punctuation-response: \(response)") }
                     let actual = try ContextCorrection.acceptFullText(response)
