@@ -292,7 +292,7 @@ public enum GeminiAudioWire {
     }
 }
 
-/// Failures that are usually transient get one automatic resend of the same audio; account and request problems would fail again.
+/// The local draft is pasted first when it has words. Only without one do transient failures get one resend of the same audio; account and request problems would fail again.
 public enum CloudAudioRetry {
     public static func shouldResend(_ error: Error) -> Bool {
         guard let error = error as? CloudError else { return false }

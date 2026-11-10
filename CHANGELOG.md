@@ -6,6 +6,24 @@ edgelesstype 是 Apple silicon Mac 的開源語音輸入工具：預設用本機
 
 edgelesstype is an open-source voice dictation app for Apple silicon Macs, with local Whisper by default and optional OpenAI or Google Gemini cloud recognition. Each entry starts with the problem a user ran into, then the changes, what has and has not been verified, and an English summary. Dates mark source updates, not separately packaged releases.
 
+## 2026-11-10 — 等太久就自動貼本機
+
+平常講完約 4 秒貼上，但偶爾要等十幾秒。原因有兩個：雲端偶爾回得很慢；雲端失敗時會把同一段錄音再送一次，等於等兩輪。其實本機早就在旁邊辨識完了，只是要你按 Fn 才用。
+
+### 這次處理的難題
+
+- **不用按，慢了就換：** 雲端等超過 5 秒（錄音越長放寬越多，每 8 秒錄音多 1 秒），而本機已經有字時，自動取消雲端、貼本機的。本機還沒算完就繼續等，誰先好用誰。
+- **失敗不再等第二輪：** 雲端失敗時直接貼本機結果。只有本機沒聽到字，才把錄音再送一次。
+- **慢不慢用數字說：** 每次貼上都記一筆秒數（`Config/latency-history.json`，最新 500 筆，只有數字，沒有錄音或文字）。`python3 Scripts/latency-report.py` 會列出中位數和超過 3、5、10 秒的次數。
+
+### 完成狀態
+
+自動測試通過（143 項）。上線後頭 28 次聽寫：中位數 4.6 秒，最慢 8.5 秒，沒有一次超過 10 秒；自動改貼本機觸發 5 次，都是 11 到 24 秒的較長錄音；沒有一次需要重送。5 秒這個門檻是估的，紀錄再多一些後再調。平常那 4 到 5 秒是雲端本身的速度，這次沒有變快。自動改貼本機的那幾次沒有雲端校正，標點可能較少。
+
+### Paste the local draft when the cloud is slow
+
+Cloud recognition that outlasts 5 s plus an eighth of the recording length is now abandoned automatically once the parallel local Whisper draft has words; before that the two race. A cloud failure pastes the local draft at once instead of resending first; the resend remains only for when local heard nothing. Every pasted dictation appends its timings to `Config/latency-history.json` (latest 500, numbers only), summarised by `Scripts/latency-report.py`. In the first 28 real dictations the median was 4.6 s and the slowest 8.5 s, none over 10 s; the takeover fired 5 times, all on recordings of 11 to 24 s. The threshold is an estimate, and the usual 4 to 5 s cloud wait itself is unchanged.
+
 ## 2026-11-01 — 2 秒就能改用本機
 
 等 5 秒才能按 Fn 還是太久。現在雲端辨識等滿 2 秒，就會浮出「改用本機 · Fn」。

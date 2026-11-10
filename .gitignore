@@ -23,6 +23,7 @@ __pycache__/
 /Config/sounds.json
 /Config/vocabulary.json
 /Config/last-latency.json
+/Config/latency-history.json
 *.key
 *.pem
 *.p12

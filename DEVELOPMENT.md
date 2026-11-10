@@ -51,7 +51,7 @@ Claude 校正與翻譯目前都用 `claude-haiku-5-5`，請求明確設定 `thin
 
 校正提示詞保持在 550 字元以內，通用規則優先。新錯字通常加入測試，避免把整個測試集塞進提示詞；送到模型的字典不含內部 UUID 或空白欄位。
 
-`Config/last-latency.json` 可記錄校正是 corrected、unchanged、rejected、timeout 等狀態，只有狀態與計時，沒有錄音或文字。此檔不公開。
+`Config/last-latency.json` 可記錄校正是 corrected、unchanged、rejected、timeout 等狀態，只有狀態與計時，沒有錄音或文字。此檔不公開。`Config/latency-history.json` 另外保留最近 500 次貼上的秒數、錄音長度、雲端請求次數與改用本機的原因（slow／chosen／failed／empty），同樣只有數字、不公開；`python3 Scripts/latency-report.py` 會列出中位數、p90、p99 與超過 3／5／10 秒的次數。
 
 `correction-probe` 是可選的真實 API 測試，會用目前選用服務商與已儲存金鑰，送出程式內固定範例與字典並消耗額度；不要在沒有使用者授權時執行。一般回歸測試不會連線。
 

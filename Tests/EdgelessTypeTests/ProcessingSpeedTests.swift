@@ -80,6 +80,66 @@ final class ProcessingSpeedTests: XCTestCase {
         XCTAssertThrowsError(try local.wait())
     }
 
+    func testLocalTakeoverDelayGrowsWithTheRecording() {
+        XCTAssertEqual(LocalTakeover.delay(audioBytes: 0), 5)
+        XCTAssertEqual(LocalTakeover.delay(audioBytes: 44 + 32_000 * 16), 7)
+        XCTAssertEqual(LocalTakeover.delay(audioBytes: 44 + 32_000 * 80), 15)
+    }
+
+    func testSlowCloudIsAbandonedOnceTheLocalDraftHasWords() {
+        let token = ProcessingCancellation()
+        let abandoned = DispatchSemaphore(value: 0)
+        token.register { abandoned.signal() }
+        let local = PendingResult { "本機合成文字" }
+        _ = try? local.wait()
+        let takeover = LocalTakeover(after: 0.05, poll: 0.01, cancellation: token) { local.finishedValue != nil }
+        XCTAssertTrue(abandoned.wait(timeout: .now() + 2) == .success)
+        XCTAssertTrue(takeover.didFire)
+        XCTAssertTrue(token.didSkipCloud)
+        XCTAssertFalse(token.isCancelled)
+    }
+
+    func testTakeoverWaitsForTheLocalDraftInsteadOfSwitchingToNothing() {
+        let token = ProcessingCancellation()
+        let abandoned = DispatchSemaphore(value: 0)
+        token.register { abandoned.signal() }
+        let gate = DispatchSemaphore(value: 0)
+        let local = PendingResult { () -> String in gate.wait(); return "late" }
+        let takeover = LocalTakeover(after: 0.02, poll: 0.01, cancellation: token) { local.finishedValue != nil }
+        XCTAssertFalse(abandoned.wait(timeout: .now() + 0.2) == .success)
+        XCTAssertFalse(takeover.didFire)
+        gate.signal()
+        XCTAssertTrue(abandoned.wait(timeout: .now() + 2) == .success)
+        XCTAssertTrue(takeover.didFire)
+    }
+
+    func testCloudReplyInTimeDisarmsTheTakeover() {
+        let token = ProcessingCancellation()
+        let takeover = LocalTakeover(after: 0.05, poll: 0.01, cancellation: token) { true }
+        takeover.disarm()
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertFalse(takeover.didFire)
+        XCTAssertFalse(token.didSkipCloud)
+    }
+
+    func testFailedLocalDraftNeverTakesOver() {
+        let token = ProcessingCancellation()
+        let local = PendingResult { () -> String in throw ProcessingError.cancelled }
+        XCTAssertThrowsError(try local.wait())
+        XCTAssertNil(local.finishedValue)
+        let takeover = LocalTakeover(after: 0.01, poll: 0.01, cancellation: token) { local.finishedValue != nil }
+        Thread.sleep(forTimeInterval: 0.15)
+        takeover.disarm()
+        XCTAssertFalse(token.didSkipCloud)
+    }
+
+    func testCloudTextThatWonTheRaceClearsTheSkip() {
+        let token = ProcessingCancellation()
+        token.skipCloud()
+        token.resumeCloud()
+        XCTAssertFalse(token.didSkipCloud)
+    }
+
     func testRoughPasteOfferAppearsOnlyAfterCloudStepsWaitThreeSeconds() {
         XCTAssertFalse(ProcessingPlan.shouldOfferRoughPaste(stage: .correcting, elapsed: 2.9))
         XCTAssertTrue(ProcessingPlan.shouldOfferRoughPaste(stage: .correcting, elapsed: 3))

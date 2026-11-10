@@ -939,6 +939,16 @@ final class AppController: NSObject, NSApplicationDelegate {
                 vocabulary: recordingVocabulary, recordingContext: job.context).transcribe(url: url, cancellation: cancellation))
         }
         var localOutcome = "skipped"
+        // A cloud wait past its usual time ends by itself once the local draft has words; before that the button stays the user's choice.
+        let audioBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        timing.audioSeconds = Double(max(0, audioBytes - 44)) / 32_000
+        let takeover = localDraft.map { draft in
+            LocalTakeover(after: LocalTakeover.delay(audioBytes: audioBytes), cancellation: cancellation) {
+                draft.finishedValue.map(SpeechContent.hasWords) ?? false
+            }
+        }
+        defer { takeover?.disarm() }
+        var triedLocalAfterFailure = false
         while true {
             attempt += 1
             var evidence: [String: String]?
@@ -954,6 +964,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 // The user chose local Whisper while the cloud was slow: same recording, no further cloud step.
                 if backend.isCloud, cancellation.didSkipCloud, !recognizedLocally {
                     recognizedLocally = true
+                    timing.localReason = takeover?.didFire == true ? "slow" : "chosen"
                     do {
                         transcript = try recognizeLocally()
                         break
@@ -965,17 +976,22 @@ final class AppController: NSObject, NSApplicationDelegate {
                     }
                 }
                 if backend.isCloud { TranscriptionFailureLog.save(backend: backend, error: error, attempt: attempt, evidence: evidence) }
-                // The same recording goes out once more before the user sees a failure.
+                // The cloud gave up: the local draft of the same recording is pasted at once, instead of a second wait or a failure card.
+                if backend.isCloud, error is CloudError, !triedLocalAfterFailure {
+                    triedLocalAfterFailure = true
+                    if let local = try? recognizeLocally(), SpeechContent.hasWords(local) {
+                        transcript = local
+                        recognizedLocally = true
+                        timing.localReason = "failed"
+                        localOutcome = CloudAudioRetry.localFallbackOutcome(error)
+                        break
+                    }
+                    guard !cancellation.isCancelled else { return }
+                }
+                // No local words to paste: the same recording goes out once more before the user sees a failure.
                 if attempt == 1, backend.isCloud, CloudAudioRetry.shouldResend(error, evidence: evidence) {
                     updateUI(for: job) { self.panel.showWorking(.uploading, progress: 0) }
                     continue
-                }
-                // The cloud gave up before the user could choose; the local draft of the same recording is pasted instead of a failure card.
-                if backend.isCloud, error is CloudError, let local = try? recognizeLocally(), SpeechContent.hasWords(local) {
-                    transcript = local
-                    recognizedLocally = true
-                    localOutcome = CloudAudioRetry.localFallbackOutcome(error)
-                    break
                 }
                 guard !cancellation.isCancelled else { return }
                 let reason = (error as? TranscriptionError)?.errorDescription ?? (error as? CloudError)?.errorDescription
@@ -990,6 +1006,10 @@ final class AppController: NSObject, NSApplicationDelegate {
                 return
             }
         }
+        takeover?.disarm()
+        // The timer fired as the cloud text arrived: that text is used, so nothing later counts as skipped.
+        if takeover?.didFire == true, !recognizedLocally { cancellation.resumeCloud() }
+        timing.cloudAttempts = recordingTranscription.backend.isCloud ? attempt : 0
         guard !cancellation.isCancelled else { return }
         // An empty cloud reply used to end the job silently; the local draft decides whether there was speech.
         if recordingTranscription.backend.isCloud, !recognizedLocally, !SpeechContent.hasWords(transcript),
@@ -997,6 +1017,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             TranscriptionFailureLog.save(backend: recordingTranscription.backend, error: CloudRecognitionGap.emptyReply, attempt: attempt, evidence: nil)
             transcript = local
             recognizedLocally = true
+            timing.localReason = "empty"
         }
         guard !cancellation.isCancelled else { return }
         timing.recognitionSeconds = Double(DispatchTime.now().uptimeNanoseconds - speechStarted)/1e9
@@ -1238,6 +1259,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if let data = try? encoder.encode(timing) {
             try? data.write(to: AppPaths.projectRoot().appendingPathComponent("Config/last-latency.json"), options: .atomic)
         }
+        LatencyHistory.append(timing)
     }
 
     private func cleanup(_ url: URL?) {
